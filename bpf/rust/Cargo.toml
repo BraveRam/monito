@@ -1,0 +1,22 @@
+[package]
+name = "monito-ebpf"
+version = "1.0.0"
+edition = "2024"
+license = "MIT OR GPL-2.0-only"
+publish = false
+
+[[bin]]
+name = "monito-ebpf"
+path = "src/main.rs"
+test = false
+bench = false
+
+[dependencies]
+aya-ebpf = "=0.2.1"
+
+[profile.release]
+opt-level = 2
+debug = 2
+lto = true
+codegen-units = 1
+panic = "abort"
