@@ -52,6 +52,8 @@ type AppUsageResponse struct {
 
 // CollectorStatus represents daemon health, diagnostics, and capacity
 type CollectorStatus struct {
+	RecoveredSockets    uint64    `json:"recovered_sockets"`
+	RecoveryErrors      uint64    `json:"recovery_errors"`
 	UptimeSeconds       int64     `json:"uptime_seconds"`
 	StartTime           time.Time `json:"start_time"`
 	LastFlushTime       time.Time `json:"last_flush_time"`

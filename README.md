@@ -56,7 +56,7 @@ Attributing network traffic on Linux is complex due to asynchronous packet proce
   1. Monito hooks `cgroup/sock_create` in the creating application's process context.
   2. It stores `{ pid, cgroup_id, comm }` in socket-local eBPF storage and refreshes it in the syscall-context `TCP_LISTEN_CB`. `BPF_F_CLONE` copies that ownership from a listening socket to its accepted TCP children, without sampling a PID from handshake processing.
   3. Ingress and egress hooks read this retained ownership from the packet's socket. Accepted sockets are charged to the listener's creator; passing descriptors between processes does not transfer that ownership.
-  4. Sockets created before the collector started or without retained metadata are recorded as `Unattributed Traffic`, with their observed traffic category retained.
+  4. Sockets open before startup are recovered when their application next calls TCP/UDP send or receive. Recovery uses function-entry hooks with the existing service capabilities. Bytes observed before ownership is recovered remain `Unattributed Traffic`; they are never reassigned retroactively. Kernel-only or otherwise unowned packets keep their observed traffic category.
   5. Userspace differences cumulative counters without deleting active entries. The flow map holds 16,384 PID/category entries with LRU eviction; generations detect recreated entries. Extreme churn exceeding that capacity between snapshots can still lose unsampled data. Allocation failures are exposed through `MapErrors`.
 
 
@@ -84,6 +84,8 @@ Monito classifies all traffic into four distinct categories:
 ---
 
 ## Application Identity
+
+Command-name and short-lived fallbacks are grouped with a full executable path only when that match is unique among recorded executables. Distinct paths sharing a basename stay separate. Original traffic rows are retained; aliases combine the dashboard, live rates, and history without changing totals. New competing paths revoke an ambiguous alias automatically. Classification uses known executable names, desktop metadata, and service cgroups instead of process-name suffixes.
 
 PIDs are temporary identifiers recycled by the kernel. Monito builds persistent application identities:
 
@@ -187,6 +189,10 @@ monito
 
 For a separate user daemon, pass `--socket` to the CLI or set `MONITO_SOCKET` to its socket path. The default client path always matches the system service, `/run/monito/monito.sock`.
 
+The dashboard distinguishes **Recorded** applications for the selected day from applications **Transferring** now. Traffic mix shows External, LAN/private, Loopback, and Unknown address classification. App attribution is a separate percentage: it measures how many recorded bytes have a known application owner. Historical unattributed bytes remain visible even after ownership recovery improves current traffic.
+
+The system service uses `Type=notify`: `systemctl start` and `restart` wait until the API socket is listening and initialization is complete.
+
 ### Non-Interactive CLI Commands
 
 #### Today's Usage Summary
@@ -244,10 +250,11 @@ Live kernel verification is separate and requires root:
 
 ```bash
 make kernel-test-binaries
+sudo make install
 sudo ./scripts/test-kernel.sh
 ```
 
-The kernel tests first load and exercise the programs under the exact capability bounding set declared by the service, then verify concurrent packet accounting while snapshots run, then start the real daemon, transfer data between distinct TCP client/server processes, query the API as a regular user, and verify shutdown persistence and restart. They use temporary databases and sockets and do not install a service or overwrite existing history.
+The kernel tests first load and exercise the programs under the exact capability bounding set declared by the service, then verify concurrent packet accounting while snapshots run, then start the real daemon under the service capability bounding set, transfer data between distinct unprivileged TCP client/server processes (including connections open before startup), query the API as a regular user, and verify shutdown persistence and restart. They use temporary databases and sockets and do not install a service or overwrite existing history. The final check starts a disposable transient systemd unit with the real service sandbox and verifies its readiness notification and API; that unit is stopped automatically. This sandbox check requires the installed daemon to match the local build, so private home-directory permissions do not prevent execution.
 
 The apps API emits traffic categories `0=loopback`, `1=private`, `2=external`, `3=unknown`, or `-1=mixed` when an app used several categories. This differs from the application-type label in `identity.category`.
 

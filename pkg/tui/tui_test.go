@@ -6,6 +6,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"monito/pkg/api"
 	"monito/pkg/identity"
@@ -176,6 +177,35 @@ func TestStaleResponsesAndModalQuit(t *testing.T) {
 		}
 		if _, ok := cmd().(tea.QuitMsg); !ok {
 			t.Fatalf("Ctrl+C did not quit in %s", state)
+		}
+	}
+}
+
+func TestDashboardLabelsCoverageAndWidths(t *testing.T) {
+	m := NewModel(api.NewClient("/dev/null"))
+	m.connected = true
+	m.summary = &storage.DaySummary{TotalBytes: 100, TotalBytesIn: 80, TotalBytesOut: 20, ExternalBytes: 50, PrivateBytes: 20, LoopbackBytes: 20, UnknownBytes: 10, UnattributedBytes: 60, RecordedAppCount: 4}
+	m.live = &api.LiveStatus{AppRates: []api.LiveAppRate{{AppKey: "exec:/usr/bin/curl", RateIn: 1, TotalRate: 1}, {AppKey: "unknown:unattributed", RateIn: 2, TotalRate: 2}}}
+	m.collectorStatus = &api.CollectorStatus{RecoveredSockets: 9}
+	m.filterText = "curl"
+	for i := 0; i < 30; i++ {
+		m.apps = append(m.apps, api.AppUsageResponse{Identity: &identity.AppIdentity{AppKey: "exec:/usr/bin/curl", DisplayName: "Very long 🌐 application 世界 name", Category: "cli_tool"}})
+	}
+	for _, width := range []int{80, 120, 140} {
+		m.width, m.height = width, 35
+		view := m.View()
+		for _, label := range []string{"Recorded: 4 apps", "Transferring: 1 apps", "Loopback: 20.0%", "Unknown:  10.0%", "App attribution: 40.0%", "Existing sockets recovered: 9"} {
+			if !strings.Contains(view, label) {
+				t.Errorf("width %d missing %q", width, label)
+			}
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if got := lipgloss.Width(line); got > width {
+				t.Errorf("width %d overflow %d: %q", width, got, line)
+			}
+		}
+		if got := lipgloss.Height(view); got > m.height {
+			t.Errorf("height overflow at width %d: got %d want <=%d", width, got, m.height)
 		}
 	}
 }

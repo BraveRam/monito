@@ -53,7 +53,11 @@ func startDaemon(t *testing.T, bin, db, socket string, mock bool) *daemonProcess
 	if mock {
 		args = append(args, "--mock")
 	}
-	d := &daemonProcess{cmd: exec.Command(filepath.Join(bin, "monitod"), args...)}
+	command := exec.Command(filepath.Join(bin, "monitod"), args...)
+	if bounds := os.Getenv("MONITO_DAEMON_BOUNDING_SET"); bounds != "" && !mock {
+		command = exec.Command("setpriv", append([]string{"--bounding-set=" + bounds, filepath.Join(bin, "monitod")}, args...)...)
+	}
+	d := &daemonProcess{cmd: command}
 	d.cmd.Stdout, d.cmd.Stderr = &d.log, &d.log
 	if err := d.cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -134,7 +138,23 @@ func TestMockEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	notifyPath := filepath.Join(dir, "notify.sock")
+	notification, err := net.ListenUnixgram("unixgram", &net.UnixAddr{Name: notifyPath, Net: "unixgram"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer notification.Close()
+	t.Setenv("NOTIFY_SOCKET", notifyPath)
 	d := startDaemon(t, bin, db, socket, true)
+	notification.SetReadDeadline(time.Now().Add(time.Second))
+	ready := make([]byte, 256)
+	n, _, err := notification.ReadFromUnix(ready)
+	if err != nil || !strings.Contains(string(ready[:n]), "READY=1") {
+		t.Fatalf("readiness=%q err=%v", ready[:n], err)
+	}
+	if _, err := api.NewClient(socket).GetStatus(); err != nil {
+		t.Fatalf("READY before API: %v", err)
+	}
 	var summary storage.DaySummary
 	if err := json.Unmarshal(cli(t, bin, socket, "today"), &summary); err != nil {
 		t.Fatal(err)
@@ -190,14 +210,31 @@ func TestWorkload(t *testing.T) {
 			}
 			go func() {
 				defer c.Close()
-				c.SetDeadline(time.Now().Add(10 * time.Second))
-				if _, err := io.CopyN(io.Discard, c, transferBytes); err != nil {
-					panic(err)
-				}
-				if _, err := io.CopyN(c, zeroReader{}, transferBytes); err != nil {
-					panic(err)
+				for {
+					c.SetDeadline(time.Now().Add(10 * time.Second))
+					if _, err := io.CopyN(io.Discard, c, transferBytes); err != nil {
+						return
+					}
+					if _, err := io.CopyN(c, zeroReader{}, transferBytes); err != nil {
+						return
+					}
 				}
 			}()
+		}
+	}
+	persistent := os.Getenv("MONITO_PRECONNECT") == "1"
+	connections := make([]net.Conn, 4)
+	dial := func() net.Conn {
+		c, err := net.DialTimeout("tcp4", os.Getenv("MONITO_ADDRESS"), 5*time.Second)
+		if err != nil {
+			panic(err)
+		}
+		return c
+	}
+	if persistent {
+		for i := range connections {
+			connections[i] = dial()
+			defer connections[i].Close()
 		}
 	}
 	fmt.Println("READY")
@@ -206,13 +243,13 @@ func TestWorkload(t *testing.T) {
 		var wg sync.WaitGroup
 		for i := 0; i < 4; i++ {
 			wg.Add(1)
-			go func() {
+			go func(i int) {
 				defer wg.Done()
-				c, err := net.DialTimeout("tcp4", os.Getenv("MONITO_ADDRESS"), 5*time.Second)
-				if err != nil {
-					panic(err)
+				c := connections[i]
+				if !persistent {
+					c = dial()
+					defer c.Close()
 				}
-				defer c.Close()
 				c.SetDeadline(time.Now().Add(10 * time.Second))
 				if _, err := io.CopyN(c, zeroReader{}, transferBytes); err != nil {
 					panic(err)
@@ -220,7 +257,7 @@ func TestWorkload(t *testing.T) {
 				if _, err := io.CopyN(io.Discard, c, transferBytes); err != nil {
 					panic(err)
 				}
-			}()
+			}(i)
 		}
 		wg.Wait()
 		fmt.Println("DONE")
@@ -247,6 +284,14 @@ func helper(t *testing.T, dir, role, address string) (*exec.Cmd, io.WriteCloser,
 		t.Fatal(err)
 	}
 	cmd := exec.Command(path, "-test.run=^TestWorkload$")
+	if os.Geteuid() == 0 && os.Getenv("MONITO_EBPF_E2E") == "1" {
+		uid, _ := strconv.Atoi(os.Getenv("SUDO_UID"))
+		gid, _ := strconv.Atoi(os.Getenv("SUDO_GID"))
+		if uid == 0 {
+			uid, gid = 65534, 65534
+		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{Credential: &syscall.Credential{Uid: uint32(uid), Gid: uint32(gid)}}
+	}
 	cmd.Env = append(os.Environ(), "MONITO_WORKLOAD="+role, "MONITO_ADDRESS="+address)
 	cmd.Stderr = os.Stderr
 	in, err := cmd.StdinPipe()
@@ -264,7 +309,9 @@ func helper(t *testing.T, dir, role, address string) (*exec.Cmd, io.WriteCloser,
 	return cmd, in, bufio.NewScanner(out)
 }
 
-func TestKernelEndToEnd(t *testing.T) {
+func TestKernelEndToEnd(t *testing.T)            { kernelEndToEnd(t, false) }
+func TestKernelExistingConnections(t *testing.T) { kernelEndToEnd(t, true) }
+func kernelEndToEnd(t *testing.T, preexisting bool) {
 	if os.Getenv("MONITO_EBPF_E2E") != "1" {
 		t.Skip("set MONITO_EBPF_E2E=1 and run with CAP_BPF+CAP_NET_ADMIN")
 	}
@@ -278,18 +325,38 @@ func TestKernelEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	db, socket := filepath.Join(dir, "usage.db"), filepath.Join(dir, "api.sock")
-	d := startDaemon(t, bin, db, socket, false)
-	cli(t, bin, socket, "status") // Drops root credentials to test read-only API access.
+	var d *daemonProcess
+	if !preexisting {
+		d = startDaemon(t, bin, db, socket, false)
+	}
 	_, _, server := helper(t, dir, "server", "")
 	if !server.Scan() {
 		t.Fatal("server did not announce address")
 	}
 	address := server.Text()
+	if preexisting {
+		t.Setenv("MONITO_PRECONNECT", "1")
+	}
 	_, input, clientOutput := helper(t, dir, "client", address)
 	if !clientOutput.Scan() || clientOutput.Text() != "READY" {
 		t.Fatal("client not ready")
 	}
+	if preexisting {
+		d = startDaemon(t, bin, db, socket, false)
+	}
+	cli(t, bin, socket, "status")
 	client := api.NewClient(socket)
+	if preexisting {
+		// A recvmsg already blocked before attachment cannot be observed until
+		// the app calls it again. Warm up existing connections before checking
+		// subsequent accounting; historical unknown bytes remain unchanged.
+		if _, err := fmt.Fprintln(input, "warmup"); err != nil {
+			t.Fatal(err)
+		}
+		if !clientOutput.Scan() || clientOutput.Text() != "DONE" {
+			t.Fatal("warmup failed")
+		}
+	}
 	for phase := 0; phase < 2; phase++ {
 		if _, err := fmt.Fprintln(input, "transfer"); err != nil {
 			t.Fatal(err)
@@ -314,6 +381,12 @@ func TestKernelEndToEnd(t *testing.T) {
 			}
 		}
 	}
+	if preexisting {
+		status, err := client.GetStatus()
+		if err != nil || status.RecoveredSockets < 8 || status.RecoveryErrors != 0 {
+			t.Fatalf("existing socket recovery: %+v %v", status, err)
+		}
+	}
 	d.stop(t) // 30s flush interval; all database traffic must survive this path.
 	store, err := storage.NewStorage(db)
 	if err != nil {
@@ -328,7 +401,7 @@ func TestKernelEndToEnd(t *testing.T) {
 		key := "exec:" + filepath.Join(dir, "e2e-"+role)
 		found := false
 		for _, app := range apps {
-			if app.Identity.AppKey != key {
+			if app.Identity.AppKey != key && app.Identity.AppKey != "exec:e2e-"+role {
 				continue
 			}
 			found = true

@@ -171,7 +171,10 @@ func runToday(socketPath string, asJSON bool) {
 	if summary.UnknownBytes > 0 {
 		fmt.Printf("  • Unattributed:   %s\n", util.FormatBytes(summary.UnknownBytes))
 	}
-	fmt.Printf("\nActive Applications: %d\n", summary.ActiveAppCount)
+	fmt.Printf("\nRecorded Applications: %d\n", summary.RecordedAppCount)
+	if summary.TotalBytes > 0 {
+		fmt.Printf("App Attribution: %.1f%% (%s unattributed)\n", float64(summary.TotalBytes-summary.UnattributedBytes)*100/float64(summary.TotalBytes), util.FormatBytes(summary.UnattributedBytes))
+	}
 }
 
 func runApps(socketPath, date, sort, filter string, asJSON bool) {
@@ -311,6 +314,8 @@ func runStatus(socketPath string, asJSON bool) {
 	fmt.Printf("Started:               %s\n", status.StartTime.Format(time.RFC3339))
 	fmt.Printf("Last DB Flush:         %s\n", status.LastFlushTime.Format(time.RFC3339))
 	fmt.Printf("Active Applications:   %d\n", status.ActiveAppCount)
+	fmt.Printf("Recovered Existing Sockets: %d\n", status.RecoveredSockets)
+	fmt.Printf("Ownership Recovery Errors: %d\n", status.RecoveryErrors)
 	fmt.Println("\nKernel eBPF Metrics:")
 	fmt.Printf("  • Total Ingress:     %s packets\n", strconv.FormatUint(status.TotalIngressPackets, 10))
 	fmt.Printf("  • Total Egress:      %s packets\n", strconv.FormatUint(status.TotalEgressPackets, 10))

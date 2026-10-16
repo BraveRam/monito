@@ -2,7 +2,10 @@
 #include <linux/ip.h>
 #include <linux/ipv6.h>
 #include "headers/bpf_helpers.h"
+#include "headers/bpf_tracing.h"
 #include "headers/bpf_endian.h"
+
+struct sock;
 
 char __license[] SEC("license") = "Dual MIT/GPL";
 
@@ -70,6 +73,8 @@ struct {
 // 3: Unattributed ingress packets
 // 4: Unattributed egress packets
 // 5: Map insertion / capacity errors
+// 6: Existing sockets recovered at application IO
+// 7: Ownership recovery allocation failures
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 8);
@@ -122,6 +127,27 @@ int on_sockops(struct bpf_sock_ops *ctx) {
     else bump_counter(5);
     if (proc.pid) bpf_map_update_elem(&pid_metadata, &proc.pid, &proc, BPF_ANY);
     return 1;
+}
+
+// tcp/udp sendmsg and recvmsg run in the application's syscall context.
+// This recovers pre-existing sockets without reading or duplicating another
+// process's file descriptors, and never changes a known socket owner.
+SEC("fentry/tcp_sendmsg")
+int BPF_PROG(on_socket_io, struct sock *sk) {
+    if (!sk) return 0;
+    if (bpf_sk_storage_get(&sock_owners, sk, 0, 0)) return 0;
+    struct proc_info proc = {};
+    proc.pid = (__u32)(bpf_get_current_pid_tgid() >> 32);
+    if (!proc.pid) return 0;
+    proc.tgid = proc.pid;
+    proc.cgroup_id = bpf_get_current_cgroup_id();
+    bpf_get_current_comm(&proc.comm, sizeof(proc.comm));
+    struct proc_info *owner = bpf_sk_storage_get(&sock_owners, sk, &proc, BPF_SK_STORAGE_GET_F_CREATE);
+    if (owner) {
+        bpf_map_update_elem(&pid_metadata, &proc.pid, &proc, BPF_ANY);
+        bump_counter(6);
+    } else bump_counter(7);
+    return 0;
 }
 
 // Cumulative counters are never reset by userspace. A generation distinguishes

@@ -3,6 +3,7 @@ package storage
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,5 +190,81 @@ func TestHistoryWindowAndTrafficCategories(t *testing.T) {
 	apps, err = store.GetAppsForDay(now.Format("2006-01-02"), "total")
 	if err != nil || apps[0].Category != -1 || apps[0].CategoryStr != "mixed" || apps[0].TotalBytes != 200 {
 		t.Fatalf("mixed categories must remain one app: %+v err=%v", apps, err)
+	}
+}
+
+func TestAliasGroupingPreservesTotalsHistoryAndAmbiguity(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "aliases.db")
+	store, err := NewStorage(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := func(key string, bytes uint64) {
+		t.Helper()
+		ident := &identity.AppIdentity{AppKey: key, DisplayName: "gh", Category: "desktop_app"}
+		if strings.HasPrefix(key, "exec:/") {
+			ident.ExecutablePath = strings.TrimPrefix(key, "exec:")
+		}
+		if err := store.RecordUsage([]IngestionRecord{{Identity: ident, Category: 2, BytesIn: bytes}}, time.Local); err != nil {
+			t.Fatal(err)
+		}
+	}
+	record("exec:gh", 100)
+	record("exec:short_lived:gh", 200)
+	record("exec:/usr/bin/gh", 300)
+	today := time.Now().Format("2006-01-02")
+	apps, err := store.GetAppsForDay(today, "total")
+	if err != nil || len(apps) != 1 || apps[0].TotalBytes != 600 || apps[0].Identity.Category != "cli_tool" {
+		t.Fatalf("grouped=%+v err=%v", apps, err)
+	}
+	for _, key := range []string{"exec:gh", "exec:short_lived:gh", "exec:/usr/bin/gh"} {
+		history, err := store.GetAppHistory(key, 7)
+		if err != nil || len(history) != 1 || history[0].TotalBytes != 600 {
+			t.Fatalf("%s history=%+v err=%v", key, history, err)
+		}
+	}
+	summary, err := store.GetDaySummary(today)
+	if err != nil || summary.RecordedAppCount != 1 || summary.TotalBytes != 600 {
+		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+	store.Close()
+	store, err = NewStorage(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	apps, err = store.GetAppsForDay(today, "total")
+	if err != nil || len(apps) != 1 || apps[0].TotalBytes != 600 {
+		t.Fatalf("restart=%+v err=%v", apps, err)
+	}
+	// Another distinct binary makes the basename ambiguous. Originals remain
+	// intact, so the aliases can be revoked without moving/doubling any bytes.
+	record("exec:/opt/other/gh", 400)
+	apps, err = store.GetAppsForDay(today, "total")
+	if err != nil || len(apps) != 4 {
+		t.Fatalf("ambiguous groups=%+v err=%v", apps, err)
+	}
+	summary, err = store.GetDaySummary(today)
+	if err != nil || summary.TotalBytes != 1000 {
+		t.Fatalf("totals changed: %+v %v", summary, err)
+	}
+}
+
+func TestAttributionIsIndependentOfTrafficCategory(t *testing.T) {
+	store, err := NewStorage(filepath.Join(t.TempDir(), "coverage.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	records := []IngestionRecord{
+		{Identity: &identity.AppIdentity{AppKey: "exec:/usr/bin/curl", DisplayName: "curl"}, Category: 3, BytesIn: 30},
+		{Identity: &identity.AppIdentity{AppKey: "unknown:unattributed", DisplayName: "Unattributed"}, Category: 2, BytesIn: 70},
+	}
+	if err := store.RecordUsage(records, time.Local); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := store.GetDaySummary(time.Now().Format("2006-01-02"))
+	if err != nil || summary.UnattributedBytes != 70 || summary.UnknownBytes != 30 || summary.RecordedAppCount != 1 {
+		t.Fatalf("coverage=%+v err=%v", summary, err)
 	}
 }

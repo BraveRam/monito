@@ -5,7 +5,9 @@ After=network.target local-fs.target
 Wants=network.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+TimeoutStartSec=60
 ExecStart=/usr/local/bin/monitod --db=/var/lib/monito/monito.db --socket=/run/monito/monito.sock --cgroup=/sys/fs/cgroup
 Restart=always
 RestartSec=3s
@@ -16,7 +18,7 @@ RuntimeDirectoryMode=0755
 StateDirectory=monito
 StateDirectoryMode=0755
 
-# eBPF cgroup accounting plus process-name metadata (get_current_comm).
+# eBPF accounting, process metadata, and recovery of existing sockets at application IO.
 AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON
 CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON
 
@@ -25,7 +27,10 @@ ProtectSystem=strict
 ProtectHome=read-only
 PrivateTmp=true
 ProtectControlGroups=false
-ProtectKernelTunables=true
+# ProtectKernelTunables=yes also hides kallsyms, needed by the eBPF loader.
+# Keep its tunable paths read-only explicitly; only the symbol table stays readable.
+ReadOnlyPaths=/proc/sys /sys /proc/sysrq-trigger -/proc/latency_stats -/proc/acpi -/proc/timer_stats -/proc/fs -/proc/irq -/proc/mtrr -/proc/scsi /proc/kallsyms
+InaccessiblePaths=-/proc/kcore
 ProtectKernelModules=true
 MemoryDenyWriteExecute=false
 LockPersonality=true

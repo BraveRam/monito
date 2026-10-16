@@ -117,3 +117,60 @@ func TestExitedProcessRetainsKnownIdentity(t *testing.T) {
 		t.Fatalf("cached identity replaced: %+v", ident)
 	}
 }
+
+func TestFallbackGroupingRequiresUniquePath(t *testing.T) {
+	r := NewResolver()
+	r.SeedIdentities([]*AppIdentity{{AppKey: "exec:/usr/bin/gh"}})
+	r.SetBPFLookup(func(uint32) (string, uint64, bool) { return "gh", 1, true })
+	got := r.ResolvePID(4294967294)
+	if got.AppKey != "exec:/usr/bin/gh" || got.Category != "cli_tool" {
+		t.Fatalf("fallback=%+v", got)
+	}
+	r.SeedIdentities([]*AppIdentity{{AppKey: "exec:/opt/other/gh"}})
+	got = r.ResolvePID(4294967293)
+	if got.AppKey != "exec:short_lived:gh" {
+		t.Fatalf("ambiguous fallback guessed a path: %+v", got)
+	}
+	candidates := []*AppIdentity{{AppKey: "exec:/usr/bin/gh"}, {AppKey: "exec:/opt/other/gh"}}
+	if got := MatchFallback("exec:gh", candidates); got != "" {
+		t.Fatalf("ambiguous alias=%q", got)
+	}
+	if got := MatchFallback("exec:/usr/bin/gh", candidates); got != "" {
+		t.Fatal("full executable paths must never be aliased")
+	}
+}
+
+func TestCategoriesUseEvidence(t *testing.T) {
+	for _, tc := range []struct{ name, want string }{
+		{"gh", "cli_tool"}, {"node-MainThread", "cli_tool"}, {"language_server", "cli_tool"},
+		{"discord", "desktop_app"}, {"friend", "unknown"}, {"sync", "unknown"}, {"Brave", "web_browser"},
+	} {
+		if got := classifyAppCategory(tc.name, ""); got != tc.want {
+			t.Errorf("%s=%s want %s", tc.name, got, tc.want)
+		}
+	}
+	if got := CategoryForIdentity(&AppIdentity{AppKey: "exec:/usr/bin/node", CgroupPath: "0::/system.slice/example.service"}); got != "system_service" {
+		t.Fatalf("service evidence ignored: %s", got)
+	}
+}
+
+func TestPIDReuseDoesNotInheritExecutable(t *testing.T) {
+	r := NewResolver()
+	pid := uint32(456)
+	r.readProcess = func(uint32) (*procSnapshot, error) {
+		return &procSnapshot{PID: pid, StartTime: 1, Comm: "tool", ExePath: "/one/tool"}, nil
+	}
+	if got := r.ResolvePID(pid); got.AppKey != "exec:/one/tool" {
+		t.Fatal(got)
+	}
+	// Same process, transient readlink failure: retain its known executable.
+	r.readProcess = func(uint32) (*procSnapshot, error) { return &procSnapshot{PID: pid, StartTime: 1, Comm: "tool"}, nil }
+	if got := r.ResolvePID(pid); got.AppKey != "exec:/one/tool" {
+		t.Fatal(got)
+	}
+	// Different process generation, same comm: the old path is not evidence.
+	r.readProcess = func(uint32) (*procSnapshot, error) { return &procSnapshot{PID: pid, StartTime: 2, Comm: "tool"}, nil }
+	if got := r.ResolvePID(pid); got.AppKey == "exec:/one/tool" {
+		t.Fatalf("reused PID inherited path: %+v", got)
+	}
+}

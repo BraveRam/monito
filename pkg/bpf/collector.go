@@ -52,20 +52,24 @@ type DiagnosticCounters struct {
 	UnattributedIngress uint64
 	UnattributedEgress  uint64
 	MapErrors           uint64
+	RecoveredSockets    uint64
+	RecoveryErrors      uint64
 }
 
 // BPFCollector manages the eBPF programs, maps, and links
 type BPFCollector struct {
-	mu             sync.Mutex
-	objs           MonitoObjects
-	cgroupFile     *os.File
-	sockCreateLink link.Link
-	sockOpsLink    link.Link
-	previous       map[MonitoFlowKey]MonitoFlowMetrics
-	ingressLink    link.Link
-	egressLink     link.Link
-	cgroupPath     string
-	closed         bool
+	mu               sync.Mutex
+	objs             MonitoObjects
+	cgroupFile       *os.File
+	sockCreateLink   link.Link
+	sockOpsLink      link.Link
+	recoveryLinks    []link.Link
+	recoveryPrograms []*ebpf.Program
+	previous         map[MonitoFlowKey]MonitoFlowMetrics
+	ingressLink      link.Link
+	egressLink       link.Link
+	cgroupPath       string
+	closed           bool
 }
 
 // NewBPFCollector initializes, loads, and attaches BPF programs to root cgroup
@@ -122,6 +126,11 @@ func NewBPFCollector(cgroupPath string) (*BPFCollector, error) {
 	}
 	col.sockOpsLink = sockOps
 
+	if err := col.attachRecovery(); err != nil {
+		col.Close()
+		return nil, err
+	}
+
 	// Attach cgroup_skb/ingress
 	if col.objs.OnIngress != nil {
 		l, err := link.AttachCgroup(link.CgroupOptions{
@@ -151,6 +160,40 @@ func NewBPFCollector(cgroupPath string) (*BPFCollector, error) {
 	}
 
 	return col, nil
+}
+
+// The first argument of all these TCP/UDP functions is struct sock *. A copy
+// of the same program is verified against each function's kernel BTF signature.
+func (c *BPFCollector) attachRecovery() error {
+	l, err := link.AttachTracing(link.TracingOptions{Program: c.objs.OnSocketIo})
+	if err != nil {
+		return fmt.Errorf("attach TCP send ownership recovery: %w", err)
+	}
+	c.recoveryLinks = append(c.recoveryLinks, l)
+	spec, err := LoadMonito()
+	if err != nil {
+		return err
+	}
+	for _, target := range []string{"tcp_recvmsg", "udp_sendmsg", "udp_recvmsg", "udpv6_sendmsg", "udpv6_recvmsg"} {
+		program := spec.Programs["on_socket_io"].Copy()
+		program.AttachTo = target
+		for name, m := range map[string]*ebpf.Map{"sock_owners": c.objs.SockOwners, "pid_metadata": c.objs.PidMetadata, "counters": c.objs.Counters} {
+			if err := program.Instructions.AssociateMap(name, m); err != nil {
+				return fmt.Errorf("bind recovery map %s: %w", name, err)
+			}
+		}
+		p, err := ebpf.NewProgram(program)
+		if err != nil {
+			return fmt.Errorf("load %s ownership recovery: %w", target, err)
+		}
+		c.recoveryPrograms = append(c.recoveryPrograms, p)
+		l, err := link.AttachTracing(link.TracingOptions{Program: p})
+		if err != nil {
+			return fmt.Errorf("attach %s ownership recovery: %w", target, err)
+		}
+		c.recoveryLinks = append(c.recoveryLinks, l)
+	}
+	return nil
 }
 
 // DrainDeltas differences cumulative snapshots without deleting active counters.
@@ -226,6 +269,13 @@ func (c *BPFCollector) StopAccounting() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var errs []error
+	for _, l := range c.recoveryLinks {
+		if err := l.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	c.recoveryLinks = nil
+
 	for _, hook := range []*link.Link{&c.ingressLink, &c.egressLink, &c.sockOpsLink, &c.sockCreateLink} {
 		if *hook != nil {
 			if err := (*hook).Close(); err != nil {
@@ -279,6 +329,11 @@ func (c *BPFCollector) ReadCounters() DiagnosticCounters {
 	idx = 5
 	_ = c.objs.Counters.Lookup(&idx, &diag.MapErrors)
 
+	idx = 6
+	_ = c.objs.Counters.Lookup(&idx, &diag.RecoveredSockets)
+	idx = 7
+	_ = c.objs.Counters.Lookup(&idx, &diag.RecoveryErrors)
+
 	return diag
 }
 
@@ -293,6 +348,19 @@ func (c *BPFCollector) Close() error {
 	c.closed = true
 
 	var errs []error
+	for _, l := range c.recoveryLinks {
+		if err := l.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	c.recoveryLinks = nil
+	for _, p := range c.recoveryPrograms {
+		if err := p.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	c.recoveryPrograms = nil
+
 	if c.sockCreateLink != nil {
 		if err := c.sockCreateLink.Close(); err != nil {
 			errs = append(errs, err)

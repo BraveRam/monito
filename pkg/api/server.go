@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -162,9 +163,21 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 
 	// Fetch current rates to attach to apps
 	live := s.provider.GetLiveStatus()
+	aliases, err := s.store.CanonicalKeys()
+	if err != nil {
+		http.Error(w, `{"error":"failed to resolve application aliases"}`, http.StatusInternalServerError)
+		return
+	}
 	rateMap := make(map[string]LiveAppRate)
 	for _, appRate := range live.AppRates {
-		rateMap[appRate.AppKey] = appRate
+		key := appRate.AppKey
+		if canonical := aliases[key]; canonical != "" {
+			key = canonical
+		}
+		rate := rateMap[key]
+		rate.RateIn += appRate.RateIn
+		rate.RateOut += appRate.RateOut
+		rateMap[key] = rate
 	}
 
 	var resp []AppUsageResponse
@@ -191,7 +204,7 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 			PacketsOut:  rec.PacketsOut,
 		}
 
-		if ar, ok := rateMap[ident.AppKey]; ok {
+		if ar, ok := rateMap[ident.AppKey]; ok && date == time.Now().Format("2006-01-02") {
 			item.RateIn = ar.RateIn
 			item.RateOut = ar.RateOut
 		}
@@ -250,6 +263,12 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 	live := s.provider.GetLiveStatus()
+	aliases, err := s.store.CanonicalKeys()
+	if err != nil {
+		http.Error(w, `{"error":"failed to resolve application aliases"}`, http.StatusInternalServerError)
+		return
+	}
+	live = groupLiveRates(live, aliases)
 	_ = json.NewEncoder(w).Encode(live)
 }
 
@@ -261,4 +280,25 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDoctor(w http.ResponseWriter, r *http.Request) {
 	doctor := s.provider.GetDoctorReport()
 	_ = json.NewEncoder(w).Encode(doctor)
+}
+
+func groupLiveRates(live LiveStatus, aliases map[string]string) LiveStatus {
+	grouped := make(map[string]LiveAppRate)
+	for _, rate := range live.AppRates {
+		if key := aliases[rate.AppKey]; key != "" {
+			rate.AppKey = key
+		}
+		current := grouped[rate.AppKey]
+		current.AppKey, current.DisplayName, current.Category = rate.AppKey, rate.DisplayName, rate.Category
+		current.RateIn += rate.RateIn
+		current.RateOut += rate.RateOut
+		current.TotalRate = current.RateIn + current.RateOut
+		grouped[rate.AppKey] = current
+	}
+	live.AppRates = nil
+	for _, rate := range grouped {
+		live.AppRates = append(live.AppRates, rate)
+	}
+	sort.Slice(live.AppRates, func(i, j int) bool { return live.AppRates[i].TotalRate > live.AppRates[j].TotalRate })
+	return live
 }

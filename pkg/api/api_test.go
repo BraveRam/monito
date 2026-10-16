@@ -149,3 +149,16 @@ func TestDefaultSocketMatchesSystemService(t *testing.T) {
 		t.Fatalf("override = %q", got)
 	}
 }
+
+func TestLiveAliasesCombineWithoutChangingTotals(t *testing.T) {
+	live := LiveStatus{TotalRateIn: 30, TotalRateOut: 3, TotalRate: 33, AppRates: []LiveAppRate{
+		{AppKey: "exec:gh", RateIn: 10, RateOut: 1}, {AppKey: "exec:/usr/bin/gh", RateIn: 20, RateOut: 2},
+	}}
+	got := groupLiveRates(live, map[string]string{"exec:gh": "exec:/usr/bin/gh"})
+	if len(got.AppRates) != 1 || got.AppRates[0].RateIn != 30 || got.AppRates[0].RateOut != 3 || got.TotalRate != 33 {
+		t.Fatalf("live=%+v", got)
+	}
+	if len(live.AppRates) != 2 || live.AppRates[0].AppKey != "exec:gh" {
+		t.Fatal("mutated provider snapshot")
+	}
+}

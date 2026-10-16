@@ -39,6 +39,8 @@ type Resolver struct {
 	procCache    map[uint32]procSnapshot
 	appCache     map[string]*AppIdentity
 	desktopNames map[string]string // binary basename -> human name
+	knownPaths   map[string]map[string]bool
+	readProcess  func(uint32) (*procSnapshot, error)
 	bpfLookup    func(pid uint32) (comm string, cgroupId uint64, ok bool)
 }
 
@@ -47,8 +49,10 @@ func NewResolver() *Resolver {
 	r := &Resolver{
 		procCache:    make(map[uint32]procSnapshot),
 		appCache:     make(map[string]*AppIdentity),
+		knownPaths:   make(map[string]map[string]bool),
 		desktopNames: make(map[string]string),
 	}
+	r.readProcess = r.readProc
 	r.loadDesktopMetadata()
 	return r
 }
@@ -137,7 +141,7 @@ func (r *Resolver) ResolvePID(pid uint32) *AppIdentity {
 	}
 
 	// 2. Read live process metadata from /proc/<pid>
-	snap, err := r.readProc(pid)
+	snap, err := r.readProcess(pid)
 	if err != nil {
 		// Preserve already resolved metadata for late deltas after exit.
 		if cached, ok := r.procCache[pid]; ok {
@@ -145,16 +149,29 @@ func (r *Resolver) ResolvePID(pid uint32) *AppIdentity {
 		} else {
 			if r.bpfLookup != nil {
 				if comm, cgroupID, ok := r.bpfLookup(pid); ok && comm != "" {
-					return r.getOrCreateIdentity("exec:short_lived:"+comm,
-						r.lookupDisplayName(comm, ""), "cli_tool", "cli", comm,
-						fmt.Sprintf("cgroup-%d", cgroupID), now)
+					path := r.uniquePath(comm)
+					key := "exec:short_lived:" + comm
+					if path != "" {
+						key = "exec:" + path
+					}
+					name := comm
+					if path != "" {
+						name = filepath.Base(path)
+					}
+					category := classifyAppCategory(name, path)
+					return r.getOrCreateIdentity(key, r.lookupDisplayName(comm, path), category,
+						classifyIconType(category), path, fmt.Sprintf("cgroup-%d", cgroupID), now)
 				}
 			}
 			return r.getOrCreateIdentity(fmt.Sprintf("unknown:pid_%d", pid),
 				fmt.Sprintf("Process [PID %d]", pid), "unknown", "cli", "", "", now)
 		}
 	} else {
-		// Update cache
+		// A process may temporarily deny executable inspection. Preserve a path
+		// only for the same start time; a reused PID must not inherit it.
+		if old, ok := r.procCache[pid]; ok && old.StartTime == snap.StartTime && snap.ExePath == "" {
+			snap.ExePath = old.ExePath
+		}
 		r.procCache[pid] = *snap
 	}
 
@@ -174,7 +191,7 @@ func (r *Resolver) ResolvePID(pid uint32) *AppIdentity {
 	// 5. Follow process ancestry for multi-process applications (Chrome, Firefox, Electron)
 	rootSnap := snap
 	if isMultiProcessChild(snap.Comm, snap.ExePath) && snap.PPID > 1 {
-		if parentSnap, err := r.readProc(snap.PPID); err == nil {
+		if parentSnap, err := r.readProcess(snap.PPID); err == nil {
 			if isSameApplicationTree(snap.ExePath, parentSnap.ExePath) {
 				rootSnap = parentSnap
 			}
@@ -192,9 +209,17 @@ func (r *Resolver) ResolvePID(pid uint32) *AppIdentity {
 		exePath = rootSnap.Comm
 	}
 
+	if filepath.IsAbs(exePath) {
+		r.rememberPath(exePath)
+	}
 	appKey := fmt.Sprintf("exec:%s", exePath)
 	dispName := r.lookupDisplayName(binName, exePath)
 	category := classifyAppCategory(binName, exePath)
+	if category == "unknown" {
+		if _, ok := r.desktopNames[binName]; ok {
+			category = "desktop_app"
+		}
+	}
 	iconType := classifyIconType(category)
 
 	return r.getOrCreateIdentity(appKey, dispName, category, iconType, exePath, rootSnap.Cgroup, now)
@@ -243,6 +268,7 @@ func (r *Resolver) lookupDisplayName(binName, exePath string) string {
 func (r *Resolver) getOrCreateIdentity(key, dispName, category, iconType, exePath, cgroup string, now time.Time) *AppIdentity {
 	if existing, ok := r.appCache[key]; ok {
 		existing.LastSeen = now
+		existing.Category, existing.IconOrType = category, iconType
 		if exePath != "" && existing.ExecutablePath == "" {
 			existing.ExecutablePath = exePath
 		}
@@ -386,23 +412,121 @@ func isSameApplicationTree(childExe, parentExe string) bool {
 		strings.Contains(childExe, filepath.Base(parentExe))
 }
 
+// Categories use explicit executable names and cgroup evidence. Name suffixes
+// such as "d" or substrings such as "nc" do not establish a process's role.
 func classifyAppCategory(binName, exePath string) string {
-	lower := strings.ToLower(binName)
-	if strings.Contains(lower, "chrome") || strings.Contains(lower, "firefox") ||
-		strings.Contains(lower, "brave") || strings.Contains(lower, "chromium") ||
-		strings.Contains(lower, "browser") {
+	name := strings.ToLower(filepath.Base(binName))
+	switch name {
+	case "chrome", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave", "brave-browser", "firefox", "firefox-bin":
 		return "web_browser"
-	}
-	if strings.Contains(lower, "curl") || strings.Contains(lower, "wget") ||
-		strings.Contains(lower, "ssh") || strings.Contains(lower, "git") ||
-		strings.Contains(lower, "nc") || strings.Contains(lower, "socat") {
+	case "gh", "git", "curl", "wget", "ssh", "scp", "sftp", "rsync", "nc", "ncat", "netcat", "socat", "node", "node-mainthread", "bun", "deno", "python", "python3", "npm", "npx", "language_server", "language-server":
 		return "cli_tool"
+	case "codex", "chatgpt", "code", "vscode", "electron", "slack", "discord", "spotify":
+		return "desktop_app"
 	}
-	if strings.HasSuffix(lower, "d") || strings.Contains(lower, "service") ||
-		strings.Contains(lower, "systemd") || strings.Contains(lower, "daemon") {
+	return "unknown"
+}
+
+// FallbackName identifies command-name-only records written by older versions.
+func FallbackName(key string) string {
+	if !strings.HasPrefix(key, "exec:") {
+		return ""
+	}
+	value := strings.TrimPrefix(key, "exec:")
+	value = strings.TrimPrefix(value, "short_lived:")
+	if value == "" || strings.ContainsAny(value, "/:") {
+		return ""
+	}
+	return value
+}
+
+// MatchFallback requires a unique full executable path. Ambiguous basenames
+// stay separate, and distinct full paths are never combined just by name.
+func MatchFallback(key string, candidates []*AppIdentity) string {
+	name := FallbackName(key)
+	if name == "" {
+		return ""
+	}
+	match := ""
+	for _, candidate := range candidates {
+		if !strings.HasPrefix(candidate.AppKey, "exec:/") {
+			continue
+		}
+		path := strings.TrimPrefix(candidate.AppKey, "exec:")
+		base := filepath.Base(path)
+		if base != name && kernelComm(base) != name {
+			continue
+		}
+		if match != "" && match != candidate.AppKey {
+			return ""
+		}
+		match = candidate.AppKey
+	}
+	return match
+}
+
+func kernelComm(name string) string {
+	if len(name) > 15 {
+		return name[:15]
+	}
+	return name
+}
+
+func (r *Resolver) rememberPath(path string) {
+	path = strings.TrimSuffix(path, " (deleted)")
+	if !filepath.IsAbs(path) {
+		return
+	}
+	for _, name := range []string{filepath.Base(path), kernelComm(filepath.Base(path))} {
+		if r.knownPaths[name] == nil {
+			r.knownPaths[name] = make(map[string]bool)
+		}
+		r.knownPaths[name][path] = true
+	}
+}
+
+func (r *Resolver) uniquePath(comm string) string {
+	paths := r.knownPaths[comm]
+	if len(paths) != 1 {
+		return ""
+	}
+	for path := range paths {
+		return path
+	}
+	return ""
+}
+
+// SeedIdentities lets command-name fallbacks reuse paths observed before a
+// daemon restart, without guessing when several executables share a name.
+func (r *Resolver) SeedIdentities(identities []*AppIdentity) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, ident := range identities {
+		if strings.HasPrefix(ident.AppKey, "exec:/") {
+			r.rememberPath(strings.TrimPrefix(ident.AppKey, "exec:"))
+		}
+	}
+}
+
+// CategoryForIdentity also corrects persisted name-based guesses when read.
+func CategoryForIdentity(ident *AppIdentity) string {
+	if strings.HasPrefix(ident.AppKey, "unknown:") {
+		return "unknown"
+	}
+	if strings.HasPrefix(ident.AppKey, "systemd:") || extractSystemdService(ident.CgroupPath) != "" {
 		return "system_service"
 	}
-	return "desktop_app"
+	if strings.HasPrefix(ident.AppKey, "flatpak:") {
+		return "desktop_app"
+	}
+	name := FallbackName(ident.AppKey)
+	if name == "" {
+		name = filepath.Base(ident.ExecutablePath)
+	}
+	if name == "." || name == "" {
+		name = filepath.Base(strings.TrimPrefix(ident.AppKey, "exec:"))
+	}
+	return classifyAppCategory(name, ident.ExecutablePath)
 }
 
 func classifyIconType(category string) string {

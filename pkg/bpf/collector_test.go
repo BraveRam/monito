@@ -157,3 +157,93 @@ func TestKernelSocketOwnership(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestKernelRecoverExistingSockets(t *testing.T) {
+	if os.Getenv("MONITO_EBPF_E2E") != "1" {
+		t.Skip("requires privileged kernel test")
+	}
+	// Establish these before any creation/listen hooks are attached.
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	client, err := net.Dial("tcp4", listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer client.Close()
+	server, err := listener.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	type udpPair struct{ server, client *net.UDPConn }
+	var pairs []udpPair
+	for _, network := range []string{"udp4", "udp6"} {
+		address := "127.0.0.1:0"
+		if network == "udp6" {
+			address = "[::1]:0"
+		}
+		a, err := net.ResolveUDPAddr(network, address)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s, err := net.ListenUDP(network, a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer s.Close()
+		c, err := net.DialUDP(network, nil, s.LocalAddr().(*net.UDPAddr))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		pairs = append(pairs, udpPair{s, c})
+	}
+	collector, err := NewBPFCollector("/sys/fs/cgroup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer collector.Close()
+	check := func(socket syscall.Conn) {
+		raw, err := socket.SyscallConn()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var owner MonitoProcInfo
+		var lookup error
+		if err := raw.Control(func(fd uintptr) { key := uint32(fd); lookup = collector.objs.SockOwners.Lookup(&key, &owner) }); err != nil {
+			t.Fatal(err)
+		}
+		if lookup != nil || owner.Pid != uint32(os.Getpid()) {
+			t.Fatalf("existing socket owner=%+v error=%v", owner, lookup)
+		}
+	}
+	client.SetDeadline(time.Now().Add(3 * time.Second))
+	server.SetDeadline(time.Now().Add(3 * time.Second))
+	if _, err := client.Write([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 64)
+	if _, err := server.Read(buf); err != nil {
+		t.Fatal(err)
+	}
+	check(client.(syscall.Conn))
+	check(server.(syscall.Conn))
+	for _, pair := range pairs {
+		pair.server.SetDeadline(time.Now().Add(3 * time.Second))
+		if _, err := pair.client.Write([]byte("recover")); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := pair.server.ReadFromUDP(buf); err != nil {
+			t.Fatal(err)
+		}
+		check(pair.server)
+		check(pair.client)
+	}
+	status := collector.ReadCounters()
+	if status.RecoveredSockets < 6 || status.RecoveryErrors != 0 {
+		t.Fatalf("recovery counters=%+v", status)
+	}
+}

@@ -67,6 +67,8 @@ func (d *collectorDaemon) GetCollectorStatus() api.CollectorStatus {
 		status.UnattributedIngress = diag.UnattributedIngress
 		status.UnattributedEgress = diag.UnattributedEgress
 		status.MapErrors = diag.MapErrors
+		status.RecoveredSockets = diag.RecoveredSockets
+		status.RecoveryErrors = diag.RecoveryErrors
 	}
 	return status
 }
@@ -89,6 +91,9 @@ func (d *collectorDaemon) GetDoctorReport() api.DoctorReport {
 	}
 	if !report.BTFAvailable {
 		report.Warnings = append(report.Warnings, "BTF (/sys/kernel/btf/vmlinux) not found")
+	}
+	if d.bpfCollector != nil && d.bpfCollector.ReadCounters().RecoveryErrors > 0 {
+		report.Warnings = append(report.Warnings, "Some existing socket ownership records could not be allocated; see collector status")
 	}
 	if d.mockMode {
 		report.Warnings = append(report.Warnings, "Collector running in MOCK / PREVIEW mode without eBPF capabilities")
@@ -176,8 +181,13 @@ func run() error {
 	}
 	defer store.Close()
 
-	// Initialize Identity Resolver
+	// Paths observed before a restart remain available to short-lived fallbacks.
 	resolver := identity.NewResolver()
+	identities, err := store.ListIdentities()
+	if err != nil {
+		return fmt.Errorf("load identity hints: %w", err)
+	}
+	resolver.SeedIdentities(identities)
 
 	daemon := &collectorDaemon{
 		store:         store,
@@ -237,6 +247,9 @@ func run() error {
 	if _, err := store.PruneOldHistory(14); err != nil {
 		return fmt.Errorf("prune history: %w", err)
 	}
+	if err := notifyReady(); err != nil {
+		return err
+	}
 	previousPoll := time.Now()
 	fmt.Println("Collector running. Press Ctrl+C to stop.")
 	for {
@@ -276,6 +289,10 @@ func run() error {
 
 // poll is called serially by the event loop, including once after detachment.
 func (d *collectorDaemon) poll(now time.Time, elapsed time.Duration) error {
+	aliases, err := d.store.CanonicalKeys()
+	if err != nil {
+		return fmt.Errorf("load application aliases: %w", err)
+	}
 	var deltas []bpf.FlowDelta
 	if d.bpfCollector != nil {
 		var err error
@@ -297,10 +314,14 @@ func (d *collectorDaemon) poll(now time.Time, elapsed time.Duration) error {
 			BytesIn: delta.RxBytes, BytesOut: delta.TxBytes,
 			PacketsIn: delta.RxPackets, PacketsOut: delta.TxPackets,
 		})
-		rate := rates[ident.AppKey]
+		key := ident.AppKey
+		if canonical := aliases[key]; canonical != "" {
+			key = canonical
+		}
+		rate := rates[key]
 		if rate == nil {
-			rate = &api.LiveAppRate{AppKey: ident.AppKey, DisplayName: ident.DisplayName, Category: ident.Category}
-			rates[ident.AppKey] = rate
+			rate = &api.LiveAppRate{AppKey: key, DisplayName: ident.DisplayName, Category: ident.Category}
+			rates[key] = rate
 		}
 		rate.RateIn += float64(delta.RxBytes) / seconds
 		rate.RateOut += float64(delta.TxBytes) / seconds
@@ -315,7 +336,12 @@ func (d *collectorDaemon) poll(now time.Time, elapsed time.Duration) error {
 	live.TotalRate = live.TotalRateIn + live.TotalRateOut
 	d.mu.Lock()
 	d.liveStatus = live
-	d.activeApps = len(rates)
+	d.activeApps = 0
+	for key := range rates {
+		if !strings.HasPrefix(key, "unknown:") {
+			d.activeApps++
+		}
+	}
 	d.mu.Unlock()
 	return nil
 }

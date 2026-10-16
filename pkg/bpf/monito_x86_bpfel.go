@@ -78,6 +78,7 @@ type MonitoProgramSpecs struct {
 	OnEgress     *ebpf.ProgramSpec `ebpf:"on_egress"`
 	OnIngress    *ebpf.ProgramSpec `ebpf:"on_ingress"`
 	OnSockCreate *ebpf.ProgramSpec `ebpf:"on_sock_create"`
+	OnSocketIo   *ebpf.ProgramSpec `ebpf:"on_socket_io"`
 	OnSockops    *ebpf.ProgramSpec `ebpf:"on_sockops"`
 }
 
@@ -145,6 +146,7 @@ type MonitoPrograms struct {
 	OnEgress     *ebpf.Program `ebpf:"on_egress"`
 	OnIngress    *ebpf.Program `ebpf:"on_ingress"`
 	OnSockCreate *ebpf.Program `ebpf:"on_sock_create"`
+	OnSocketIo   *ebpf.Program `ebpf:"on_socket_io"`
 	OnSockops    *ebpf.Program `ebpf:"on_sockops"`
 }
 
@@ -153,6 +155,7 @@ func (p *MonitoPrograms) Close() error {
 		p.OnEgress,
 		p.OnIngress,
 		p.OnSockCreate,
+		p.OnSocketIo,
 		p.OnSockops,
 	)
 }

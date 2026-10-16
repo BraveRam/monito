@@ -28,15 +28,17 @@ type TrafficRecord struct {
 
 // DaySummary aggregates total traffic for a given calendar day
 type DaySummary struct {
-	DayDate        string `json:"day_date"`
-	TotalBytesIn   int64  `json:"total_bytes_in"`
-	TotalBytesOut  int64  `json:"total_bytes_out"`
-	TotalBytes     int64  `json:"total_bytes"`
-	ExternalBytes  int64  `json:"external_bytes"`
-	PrivateBytes   int64  `json:"private_bytes"`
-	LoopbackBytes  int64  `json:"loopback_bytes"`
-	UnknownBytes   int64  `json:"unknown_bytes"`
-	ActiveAppCount int    `json:"active_app_count"`
+	DayDate           string `json:"day_date"`
+	TotalBytesIn      int64  `json:"total_bytes_in"`
+	TotalBytesOut     int64  `json:"total_bytes_out"`
+	TotalBytes        int64  `json:"total_bytes"`
+	ExternalBytes     int64  `json:"external_bytes"`
+	PrivateBytes      int64  `json:"private_bytes"`
+	LoopbackBytes     int64  `json:"loopback_bytes"`
+	UnknownBytes      int64  `json:"unknown_bytes"`
+	ActiveAppCount    int    `json:"active_app_count"` // Deprecated: use recorded_app_count.
+	RecordedAppCount  int    `json:"recorded_app_count"`
+	UnattributedBytes int64  `json:"unattributed_bytes"`
 }
 
 // AppHistoryPoint represents usage on a single day for an app
@@ -160,7 +162,22 @@ func (s *Storage) migrate() error {
 		}
 	}
 
-	return nil
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err = tx.Exec(`CREATE TABLE IF NOT EXISTS app_aliases (
+        alias_id INTEGER PRIMARY KEY REFERENCES app_identities(id),
+        canonical_id INTEGER NOT NULL REFERENCES app_identities(id),
+        CHECK(alias_id != canonical_id));
+        INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES(2,CURRENT_TIMESTAMP);`); err != nil {
+		return err
+	}
+	if err := reconcileAliases(tx); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // IngestionRecord represents an incoming usage delta mapped to an AppIdentity
@@ -211,7 +228,9 @@ func (s *Storage) RecordUsage(records []IngestionRecord, localLoc *time.Location
 	}
 	defer stmtInsertApp.Close()
 
-	stmtUpdateAppSeen, err := tx.Prepare(`UPDATE app_identities SET last_seen = ? WHERE id = ?`)
+	stmtUpdateAppSeen, err := tx.Prepare(`UPDATE app_identities SET last_seen = ?, display_name=?, category=?, icon_or_type=?,
+        executable_path=CASE WHEN ? != '' THEN ? ELSE executable_path END,
+        cgroup_path=CASE WHEN ? != '' THEN ? ELSE cgroup_path END WHERE id = ?`)
 	if err != nil {
 		return err
 	}
@@ -274,7 +293,10 @@ func (s *Storage) RecordUsage(records []IngestionRecord, localLoc *time.Location
 			} else if err != nil {
 				return fmt.Errorf("query app %s: %w", appKey, err)
 			} else {
-				_, _ = stmtUpdateAppSeen.Exec(nowUnix, appID)
+				if _, err := stmtUpdateAppSeen.Exec(nowUnix, rec.Identity.DisplayName, rec.Identity.Category, rec.Identity.IconOrType,
+					rec.Identity.ExecutablePath, rec.Identity.ExecutablePath, rec.Identity.CgroupPath, rec.Identity.CgroupPath, appID); err != nil {
+					return err
+				}
 			}
 			appIDCache[appKey] = appID
 		}
@@ -315,6 +337,9 @@ func (s *Storage) RecordUsage(records []IngestionRecord, localLoc *time.Location
 		}
 	}
 
+	if err := reconcileAliases(tx); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
@@ -344,12 +369,15 @@ func (s *Storage) GetDaySummary(dayDate string) (*DaySummary, error) {
 		SELECT
 			COALESCE(SUM(bytes_in), 0),
 			COALESCE(SUM(bytes_out), 0),
-			COALESCE(SUM(CASE WHEN category = 2 THEN bytes_in + bytes_out ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN category = 1 THEN bytes_in + bytes_out ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN category = 0 THEN bytes_in + bytes_out ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN category = 3 THEN bytes_in + bytes_out ELSE 0 END), 0),
-			COUNT(DISTINCT app_id)
-		FROM traffic_daily
+			COALESCE(SUM(CASE WHEN d.category = 2 THEN bytes_in + bytes_out ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN d.category = 1 THEN bytes_in + bytes_out ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN d.category = 0 THEN bytes_in + bytes_out ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN d.category = 3 THEN bytes_in + bytes_out ELSE 0 END), 0),
+			COUNT(DISTINCT CASE WHEN a.app_key NOT LIKE 'unknown:%' THEN a.id END),
+            COALESCE(SUM(CASE WHEN a.app_key LIKE 'unknown:%' THEN bytes_in+bytes_out ELSE 0 END),0)
+		FROM traffic_daily d
+        LEFT JOIN app_aliases x ON x.alias_id=d.app_id
+        JOIN app_identities a ON a.id=COALESCE(x.canonical_id,d.app_id)
 		WHERE day_date = ?
 	`, dayDate)
 
@@ -362,10 +390,12 @@ func (s *Storage) GetDaySummary(dayDate string) (*DaySummary, error) {
 		&summary.LoopbackBytes,
 		&summary.UnknownBytes,
 		&summary.ActiveAppCount,
+		&summary.UnattributedBytes,
 	)
 	if err != nil {
 		return nil, err
 	}
+	summary.RecordedAppCount = summary.ActiveAppCount
 	summary.TotalBytes = summary.TotalBytesIn + summary.TotalBytesOut
 	return summary, nil
 }
@@ -389,7 +419,7 @@ func (s *Storage) GetAppsForDay(dayDate string, sortBy string) ([]TrafficRecord,
 
 	query := fmt.Sprintf(`
 		SELECT
-			d.app_id,
+			a.id,
 			a.app_key,
 			a.display_name,
 			a.category,
@@ -405,9 +435,10 @@ func (s *Storage) GetAppsForDay(dayDate string, sortBy string) ([]TrafficRecord,
 			SUM(d.packets_out) as packets_out,
             CASE WHEN COUNT(DISTINCT d.category) = 1 THEN MIN(d.category) ELSE -1 END
 		FROM traffic_daily d
-		JOIN app_identities a ON d.app_id = a.id
+		LEFT JOIN app_aliases x ON x.alias_id=d.app_id
+        JOIN app_identities a ON a.id=COALESCE(x.canonical_id,d.app_id)
 		WHERE d.day_date = ?
-		GROUP BY d.app_id
+		GROUP BY a.id
 		ORDER BY %s
 	`, orderClause)
 
@@ -476,8 +507,12 @@ func (s *Storage) GetAppHistory(appKey string, days int) ([]AppHistoryPoint, err
 			SUM(d.bytes_in),
 			SUM(d.bytes_out)
 		FROM traffic_daily d
-		JOIN app_identities a ON d.app_id = a.id
-		WHERE a.app_key = ? AND d.day_date >= ? AND d.day_date <= ?
+		LEFT JOIN app_aliases x ON x.alias_id=d.app_id
+        JOIN app_identities a ON a.id=COALESCE(x.canonical_id,d.app_id)
+		WHERE a.id=COALESCE(
+            (SELECT canonical_id FROM app_aliases WHERE alias_id=(SELECT id FROM app_identities WHERE app_key=?)),
+            (SELECT id FROM app_identities WHERE app_key=?))
+            AND d.day_date >= ? AND d.day_date <= ?
 		GROUP BY d.day_date
 		ORDER BY d.day_date DESC
 		LIMIT ?
@@ -487,7 +522,7 @@ func (s *Storage) GetAppHistory(appKey string, days int) ([]AppHistoryPoint, err
 	}
 	today := time.Now().In(time.Local)
 	cutoff := today.AddDate(0, 0, 1-days).Format("2006-01-02")
-	rows, err := s.db.Query(query, appKey, cutoff, today.Format("2006-01-02"), days)
+	rows, err := s.db.Query(query, appKey, appKey, cutoff, today.Format("2006-01-02"), days)
 	if err != nil {
 		return nil, err
 	}

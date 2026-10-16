@@ -24,5 +24,8 @@ if [[ "$capability_set" == -all ]]; then
     echo 'Service CapabilityBoundingSet is missing' >&2
     exit 1
 fi
+export MONITO_DAEMON_BOUNDING_SET="$capability_set"
 setpriv --bounding-set="$capability_set" ./bin/bpf.test -test.run '^TestKernel' -test.v -test.timeout 60s
-./bin/e2e.test -test.run '^TestKernelEndToEnd$' -test.v -test.timeout 60s
+./bin/e2e.test -test.run '^TestKernel' -test.v -test.timeout 60s
+
+./scripts/test-service.sh

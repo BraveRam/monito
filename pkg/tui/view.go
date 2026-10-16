@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 
 	"monito/pkg/api"
+	"monito/pkg/storage"
 	"monito/pkg/util"
 )
 
@@ -41,6 +43,9 @@ func (m Model) View() string {
 	b.WriteString(m.renderCards())
 	b.WriteString("\n")
 
+	b.WriteString(m.renderCoverage())
+	b.WriteString("\n")
+
 	// 3. Search & Filter Bar / Active Date
 	b.WriteString(m.renderControls())
 	b.WriteString("\n")
@@ -58,6 +63,9 @@ func (m Model) View() string {
 func (m Model) renderHeader() string {
 	title := titleStyle.Render(" MONITO ")
 	sub := mutedText.Render(" Linux Network Traffic Monitor")
+	if m.width < 105 {
+		sub = ""
+	}
 
 	dateBadge := lipgloss.NewStyle().
 		Bold(true).
@@ -81,66 +89,63 @@ func (m Model) renderHeader() string {
 }
 
 func (m Model) renderCards() string {
-	cardWidth := (m.width - 6) / 3
-	if cardWidth < 26 {
-		cardWidth = 26
+	cardWidth := (m.width - 8) / 3
+	if cardWidth < 20 {
+		cardWidth = 20
 	}
-
-	// Card 1: Today's Volume
-	var totalIn, totalOut, totalBytes int64
-	if m.summary != nil {
-		totalIn = m.summary.TotalBytesIn
-		totalOut = m.summary.TotalBytesOut
-		totalBytes = m.summary.TotalBytes
+	summary := m.summary
+	if summary == nil {
+		summary = &storage.DaySummary{}
 	}
-
-	volContent := fmt.Sprintf(
-		"%s %s\n%s %s\n%s %s",
-		headerLabel.Render("Total:   "), headerValue.Render(util.FormatBytes(totalBytes)),
-		rateDownStyle.Render("Download:"), util.FormatBytes(totalIn),
-		rateUpStyle.Render("Upload:  "), util.FormatBytes(totalOut),
-	)
-	card1 := cardStyle.Width(cardWidth).Render(
-		headerLabel.Render("DAY VOLUME") + "\n" + volContent,
-	)
-
-	// Card 2: Live Rate
-	var rateIn, rateOut, totalRate float64
-	if m.live != nil {
-		rateIn = m.live.TotalRateIn
-		rateOut = m.live.TotalRateOut
-		totalRate = m.live.TotalRate
+	live := m.live
+	if live == nil {
+		live = &api.LiveStatus{}
 	}
-
-	rateContent := fmt.Sprintf(
-		"%s %s\n%s %s\n%s %s",
-		headerLabel.Render("Current: "), headerValue.Render(util.FormatRate(totalRate)),
-		rateDownStyle.Render("Inflow:  "), util.FormatRate(rateIn),
-		rateUpStyle.Render("Outflow: "), util.FormatRate(rateOut),
-	)
-	card2 := cardStyle.Width(cardWidth).Render(
-		headerLabel.Render("LIVE SPEED") + "\n" + rateContent,
-	)
-
-	// Card 3: Categories & Active Apps
-	extPct, lanPct := 0.0, 0.0
-	if m.summary != nil && totalBytes > 0 {
-		extPct = float64(m.summary.ExternalBytes) / float64(totalBytes) * 100
-		lanPct = float64(m.summary.PrivateBytes) / float64(totalBytes) * 100
+	transferring := 0
+	for _, rate := range live.AppRates {
+		if !strings.HasPrefix(rate.AppKey, "unknown:") && rate.TotalRate > 0 {
+			transferring++
+		}
 	}
-	activeApps := len(m.apps)
+	volume := fmt.Sprintf("%s %s\nDownload: %s\nUpload:   %s\nRecorded: %d apps",
+		headerLabel.Render("Total:"), headerValue.Render(util.FormatBytes(summary.TotalBytes)),
+		util.FormatBytes(summary.TotalBytesIn), util.FormatBytes(summary.TotalBytesOut), summary.RecordedAppCount)
+	speed := fmt.Sprintf("%s %s\nInflow:  %s\nOutflow: %s\nTransferring: %d apps", headerLabel.Render("Current:"),
+		headerValue.Render(util.FormatRate(live.TotalRate)), util.FormatRate(live.TotalRateIn), util.FormatRate(live.TotalRateOut), transferring)
+	pct := func(bytes int64) float64 {
+		if summary.TotalBytes == 0 {
+			return 0
+		}
+		return float64(bytes) * 100 / float64(summary.TotalBytes)
+	}
+	mix := fmt.Sprintf("External: %.1f%%\nLAN/Priv: %.1f%%\nLoopback: %.1f%%\nUnknown:  %.1f%%",
+		pct(summary.ExternalBytes), pct(summary.PrivateBytes), pct(summary.LoopbackBytes), pct(summary.UnknownBytes))
+	cards := []string{}
+	for _, card := range []struct{ title, body string }{{"DAY VOLUME", volume}, {"LIVE SPEED", speed}, {"TRAFFIC MIX", mix}} {
+		cards = append(cards, cardStyle.Width(cardWidth).Render(headerLabel.Render(card.title)+"\n"+card.body))
+	}
+	if m.width < 72 {
+		return lipgloss.JoinVertical(lipgloss.Left, cards...)
+	}
+	return lipgloss.JoinHorizontal(lipgloss.Top, cards[0], " ", cards[1], " ", cards[2])
+}
 
-	mixContent := fmt.Sprintf(
-		"%s %d apps\n%s %.1f%%\n%s %.1f%%",
-		headerLabel.Render("Active:  "), activeApps,
-		mutedText.Render("External:"), extPct,
-		mutedText.Render("LAN/Priv:"), lanPct,
-	)
-	card3 := cardStyle.Width(cardWidth).Render(
-		headerLabel.Render("CATEGORIES") + "\n" + mixContent,
-	)
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, card1, " ", card2, " ", card3)
+func (m Model) renderCoverage() string {
+	text := "App attribution: no recorded traffic"
+	if m.summary != nil && m.summary.TotalBytes > 0 {
+		attributed := m.summary.TotalBytes - m.summary.UnattributedBytes
+		text = fmt.Sprintf("App attribution: %.1f%% | Unattributed: %s", float64(attributed)*100/float64(m.summary.TotalBytes), util.FormatBytes(m.summary.UnattributedBytes))
+		if m.summary.UnattributedBytes > 0 {
+			text += "\nUnattributed means no confirmed app owner; old bytes cannot be assigned retroactively."
+		}
+	}
+	if status := m.collectorStatus; status != nil {
+		text += fmt.Sprintf(" | Existing sockets recovered: %d", status.RecoveredSockets)
+		if status.RecoveryErrors > 0 {
+			text += " (recovery failures; see monito doctor)"
+		}
+	}
+	return lipgloss.NewStyle().Width(m.width).Foreground(mutedColor).Render(text)
 }
 
 func (m Model) renderControls() string {
@@ -164,32 +169,47 @@ func (m Model) renderControls() string {
 		searchBox = mutedText.Render("Press [/] to filter apps")
 	}
 
-	return fmt.Sprintf("%s   │   %s   │   %s", dateNav, sortIndicator, searchBox)
+	return lipgloss.NewStyle().Width(m.width).Render(fmt.Sprintf("%s   │   %s   │   %s", dateNav, sortIndicator, searchBox))
 }
 
 func (m Model) renderTable() string {
-	// Table Headers
-	colApp := 32
-	colCat := 14
-	colDown := 13
-	colUp := 13
-	colTotal := 13
-	colRate := 13
-
-	header := fmt.Sprintf(
-		"  %-*s %-*s %*s %*s %*s %*s",
-		colApp, "APPLICATION",
-		colCat, "CATEGORY",
-		colDown, "DOWNLOAD",
-		colUp, "UPLOAD",
-		colTotal, "TOTAL",
-		colRate, "RATE",
-	)
-	headerLine := lipgloss.NewStyle().
-		Bold(true).
-		Foreground(lipgloss.Color("#FFFFFF")).
-		Background(lipgloss.Color("#2E2E3E")).
-		Render(header)
+	showType := m.width >= 115
+	numberWidth := 10
+	if m.width >= 115 {
+		numberWidth = 13
+	}
+	typeWidth := 0
+	gaps := 4
+	if showType {
+		typeWidth = 14
+		gaps = 5
+	}
+	colApp := m.width - 2 - gaps - typeWidth - 4*numberWidth
+	if colApp > 32 {
+		colApp = 32
+	}
+	if colApp < 12 {
+		colApp = 12
+	}
+	cell := func(value string, width int, right bool) string {
+		style := lipgloss.NewStyle().Width(width).MaxWidth(width)
+		if right {
+			style = style.Align(lipgloss.Right)
+		}
+		return style.Render(ansi.Truncate(value, width, "…"))
+	}
+	formatRow := func(app, kind, down, up, total, rate string) string {
+		cells := []string{cell(app, colApp, false)}
+		if showType {
+			cells = append(cells, cell(kind, typeWidth, false))
+		}
+		for _, value := range []string{down, up, total, rate} {
+			cells = append(cells, cell(value, numberWidth, true))
+		}
+		return strings.Join(cells, " ")
+	}
+	headerLine := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#2E2E3E")).Render(
+		"  " + formatRow("APPLICATION", "APP TYPE", "DOWNLOAD", "UPLOAD", "TOTAL", "RATE"))
 
 	var rows []string
 	rows = append(rows, headerLine)
@@ -199,9 +219,10 @@ func (m Model) renderTable() string {
 		rows = append(rows, mutedText.Render(emptyMsg))
 	} else {
 		// Available vertical space for table rows
-		maxRows := m.height - 13
-		if maxRows < 5 {
-			maxRows = 5
+		maxRows := m.height - lipgloss.Height(m.renderHeader()) - lipgloss.Height(m.renderCards()) -
+			lipgloss.Height(m.renderCoverage()) - lipgloss.Height(m.renderControls()) - lipgloss.Height(m.renderFooter()) - 1
+		if maxRows < 1 {
+			maxRows = 1
 		}
 
 		// Calculate window scroll offset
@@ -232,24 +253,13 @@ func (m Model) renderTable() string {
 			}
 
 			appName := fmt.Sprintf("%s %s", icon, app.Identity.DisplayName)
-			if len(appName) > colApp-1 {
-				appName = appName[:colApp-4] + "..."
-			}
 
 			rateStr := "-"
 			if app.RateIn+app.RateOut > 0 {
 				rateStr = util.FormatRate(app.RateIn + app.RateOut)
 			}
 
-			rowStr := fmt.Sprintf(
-				"%-*s %-*s %*s %*s %*s %*s",
-				colApp, appName,
-				colCat, app.Identity.Category,
-				colDown, util.FormatBytes(app.BytesIn),
-				colUp, util.FormatBytes(app.BytesOut),
-				colTotal, util.FormatBytes(app.TotalBytes),
-				colRate, rateStr,
-			)
+			rowStr := formatRow(appName, app.Identity.Category, util.FormatBytes(app.BytesIn), util.FormatBytes(app.BytesOut), util.FormatBytes(app.TotalBytes), rateStr)
 
 			if isSel {
 				rowStr = lipgloss.NewStyle().
@@ -282,9 +292,7 @@ func (m Model) renderFooter() string {
 	}
 
 	hintStr := strings.Join(keys, "  ")
-	return lipgloss.NewStyle().
-		Foreground(mutedColor).
-		Render(hintStr)
+	return lipgloss.NewStyle().Width(m.width).Foreground(mutedColor).Render(hintStr)
 }
 
 func (m Model) renderDisconnectedView() string {
