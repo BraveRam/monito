@@ -2,8 +2,7 @@ Monito is dual-licensed under your choice of the MIT License or the
 GNU General Public License version 2 only (SPDX: MIT OR GPL-2.0-only).
 
 The MIT License is reproduced below. The GPL version 2 text is in
-LICENSE-GPL-2.0. Third-party files retain their own license notices;
-see bpf/headers/ for the bundled eBPF headers.
+LICENSE-GPL-2.0. Third-party dependencies retain their own license notices.
 
 MIT License
 

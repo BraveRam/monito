@@ -1,6 +1,6 @@
 # Monito
 
-A Linux network monitor that shows download, upload, live speed, and daily usage per application. The background collector keeps recording when you close the dashboard.
+A Linux network monitor with a Rust eBPF collector and a Go dashboard. It shows download, upload, live speed, and daily usage per application. The background collector keeps recording when you close the dashboard.
 
 ## Install
 
@@ -71,12 +71,14 @@ History starts when collection starts and is stored at `/var/lib/monito/monito.d
 ## Test
 
 ```bash
-make check                         # Vet and race tests
+make check                         # Rust tests, Go vet, and race tests
 make e2e                           # Daemon, CLI, and TUI tests in preview mode
 make kernel-test-binaries
 sudo make install
 sudo ./scripts/test-kernel.sh       # Live eBPF and service sandbox tests
 ```
+
+The Rust collector build and developer requirements are documented in [bpf/rust](bpf/rust/README.md). Normal builds and `go install` use the included bytecode and do not need Rust.
 
 ## Uninstall
 

@@ -1,6 +1,6 @@
-CC ?= clang
 GO ?= go
-BPF2GO ?= $(GO) run github.com/cilium/ebpf/cmd/bpf2go
+CARGO ?= cargo
+BPF_CARGO ?= cargo +nightly-2026-10-16
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 SYSTEMD_DIR ?= /etc/systemd/system
@@ -10,11 +10,13 @@ SYSTEMD_DIR ?= /etc/systemd/system
 all: generate
 	$(MAKE) build
 
+# Regenerating bytecode needs Rust nightly + rust-src and bpf-linker on PATH.
+# Normal builds/installations use the committed object and need only Go/GCC.
 generate:
-	@echo "Generating eBPF bytecode and Go bindings..."
-	$(BPF2GO) -cc clang -go-package bpf -output-dir pkg/bpf -target amd64 \
-		-type flow_key -type flow_metrics -type proc_info \
-		Monito bpf/monito.c -- -I./bpf
+	RUSTFLAGS='--cfg bpf_target_arch="x86_64" -C link-arg=--btf' $(BPF_CARGO) build \
+		--manifest-path bpf/rust/Cargo.toml --locked --release \
+		--target bpfel-unknown-none -Z build-std=core
+	cp bpf/rust/target/bpfel-unknown-none/release/monito-ebpf pkg/bpf/monito_x86_bpfel.o
 
 build:
 	@echo "Building Monito binaries..."
@@ -66,8 +68,12 @@ uninstall:
 	fi
 	@echo "Uninstall complete."
 
-.PHONY: check e2e kernel-test-binaries
-check:
+.PHONY: check rust-test e2e kernel-test-binaries
+rust-test:
+	$(CARGO) fmt --manifest-path bpf/rust/Cargo.toml --check
+	$(CARGO) test --manifest-path bpf/rust/Cargo.toml --locked --lib
+
+check: rust-test
 	$(GO) vet ./...
 	$(GO) test -race ./...
 
