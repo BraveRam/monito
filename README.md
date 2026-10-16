@@ -85,7 +85,7 @@ Monito classifies all traffic into four distinct categories:
 
 ## Application Identity
 
-Command-name and short-lived fallbacks are grouped with a full executable path only when that match is unique among recorded executables. Distinct paths sharing a basename stay separate. Original traffic rows are retained; aliases combine the dashboard, live rates, and history without changing totals. New competing paths revoke an ambiguous alias automatically. Classification uses known executable names, desktop metadata, and service cgroups instead of process-name suffixes.
+Command-name and short-lived fallbacks are grouped with a full executable path only when that match is unique among recorded executables. When no path matches, the two legacy fallback formats for an identical command name share one command-name bucket; this does not establish an executable path. Distinct paths sharing a basename stay separate. Original traffic rows are retained; aliases combine the dashboard, live rates, and history without changing totals. New competing paths revoke an ambiguous alias automatically. Classification uses known executable names, desktop metadata, and service cgroups instead of process-name suffixes, and recognizes npm's `npm exec …` process titles as CLI tools.
 
 PIDs are temporary identifiers recycled by the kernel. Monito builds persistent application identities:
 

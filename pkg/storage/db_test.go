@@ -211,6 +211,10 @@ func TestAliasGroupingPreservesTotalsHistoryAndAmbiguity(t *testing.T) {
 	}
 	record("exec:gh", 100)
 	record("exec:short_lived:gh", 200)
+	fallbacks, err := store.GetAppsForDay(time.Now().Format("2006-01-02"), "total")
+	if err != nil || len(fallbacks) != 1 || fallbacks[0].TotalBytes != 300 {
+		t.Fatalf("command-only groups=%+v err=%v", fallbacks, err)
+	}
 	record("exec:/usr/bin/gh", 300)
 	today := time.Now().Format("2006-01-02")
 	apps, err := store.GetAppsForDay(today, "total")
@@ -247,6 +251,56 @@ func TestAliasGroupingPreservesTotalsHistoryAndAmbiguity(t *testing.T) {
 	summary, err = store.GetDaySummary(today)
 	if err != nil || summary.TotalBytes != 1000 {
 		t.Fatalf("totals changed: %+v %v", summary, err)
+	}
+}
+
+func TestLegacyFallbackRowsReconcileOnRestart(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	store, err := NewStorage(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { store.Close() }()
+	for _, name := range []string{"node-MainThread", "npm exec rea-ag"} {
+		for _, prefix := range []string{"exec:", "exec:short_lived:"} {
+			ident := &identity.AppIdentity{AppKey: prefix + name, DisplayName: name, Category: "desktop_app"}
+			if err := store.RecordUsage([]IngestionRecord{{Identity: ident, Category: 0, BytesIn: 100, BytesOut: 50}}, time.Local); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	// Simulate a database from before alias reconciliation and classification.
+	if _, err := store.db.Exec(`DELETE FROM app_aliases; UPDATE app_identities SET category='desktop_app',icon_or_type='app'`); err != nil {
+		t.Fatal(err)
+	}
+	store.Close()
+	store, err = NewStorage(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	today := time.Now().Format("2006-01-02")
+	apps, err := store.GetAppsForDay(today, "total")
+	if err != nil || len(apps) != 2 {
+		t.Fatalf("apps=%+v err=%v", apps, err)
+	}
+	for _, app := range apps {
+		if app.TotalBytes != 300 || app.Identity.Category != "cli_tool" || app.Identity.IconOrType != "cli" {
+			t.Errorf("wrong grouped row: %+v identity=%+v", app, app.Identity)
+		}
+		for _, prefix := range []string{"exec:", "exec:short_lived:"} {
+			history, err := store.GetAppHistory(prefix+app.Identity.DisplayName, 7)
+			if err != nil || len(history) != 1 || history[0].TotalBytes != 300 {
+				t.Errorf("history=%+v err=%v", history, err)
+			}
+		}
+	}
+	keys, err := store.CanonicalKeys()
+	if err != nil || keys["exec:short_lived:node-MainThread"] != "exec:node-MainThread" || keys["exec:short_lived:npm exec rea-ag"] != "exec:npm exec rea-ag" {
+		t.Fatalf("live aliases=%v err=%v", keys, err)
+	}
+	summary, err := store.GetDaySummary(today)
+	if err != nil || summary.TotalBytes != 600 || summary.RecordedAppCount != 2 {
+		t.Fatalf("summary=%+v err=%v", summary, err)
 	}
 }
 

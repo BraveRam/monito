@@ -144,6 +144,7 @@ func TestCategoriesUseEvidence(t *testing.T) {
 	for _, tc := range []struct{ name, want string }{
 		{"gh", "cli_tool"}, {"node-MainThread", "cli_tool"}, {"language_server", "cli_tool"},
 		{"discord", "desktop_app"}, {"friend", "unknown"}, {"sync", "unknown"}, {"Brave", "web_browser"},
+		{"npm exec rea-ag", "cli_tool"}, {"npm exec other", "cli_tool"}, {"npm-example", "unknown"},
 	} {
 		if got := classifyAppCategory(tc.name, ""); got != tc.want {
 			t.Errorf("%s=%s want %s", tc.name, got, tc.want)
@@ -151,6 +152,22 @@ func TestCategoriesUseEvidence(t *testing.T) {
 	}
 	if got := CategoryForIdentity(&AppIdentity{AppKey: "exec:/usr/bin/node", CgroupPath: "0::/system.slice/example.service"}); got != "system_service" {
 		t.Fatalf("service evidence ignored: %s", got)
+	}
+}
+
+func TestCommandOnlyFallbackGrouping(t *testing.T) {
+	for _, name := range []string{"node-MainThread", "npm exec rea-ag"} {
+		plain, short := "exec:"+name, "exec:short_lived:"+name
+		candidates := []*AppIdentity{{AppKey: short}, {AppKey: plain}}
+		if got := MatchFallback(short, candidates); got != plain {
+			t.Fatalf("%s alias=%q want %q", name, got, plain)
+		}
+		if got := MatchFallback(plain, candidates); got != "" {
+			t.Fatalf("canonical identity aliased itself: %q", got)
+		}
+		if got := MatchFallback(short, candidates[:1]); got != "" {
+			t.Fatalf("aliased to a missing identity: %q", got)
+		}
 	}
 }
 

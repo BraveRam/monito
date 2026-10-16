@@ -416,6 +416,11 @@ func isSameApplicationTree(childExe, parentExe string) bool {
 // such as "d" or substrings such as "nc" do not establish a process's role.
 func classifyAppCategory(binName, exePath string) string {
 	name := strings.ToLower(filepath.Base(binName))
+	// npm changes its process title to include the invoked command. Match
+	// that explicit title form without treating arbitrary prefixes as tools.
+	if strings.HasPrefix(name, "npm exec ") {
+		return "cli_tool"
+	}
 	switch name {
 	case "chrome", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "brave", "brave-browser", "firefox", "firefox-bin":
 		return "web_browser"
@@ -440,8 +445,9 @@ func FallbackName(key string) string {
 	return value
 }
 
-// MatchFallback requires a unique full executable path. Ambiguous basenames
-// stay separate, and distinct full paths are never combined just by name.
+// MatchFallback prefers a unique full executable path. With no matching path,
+// legacy short-lived and plain command-name records share one fallback bucket.
+// Ambiguous executable paths stay separate; names never combine full paths.
 func MatchFallback(key string, candidates []*AppIdentity) string {
 	name := FallbackName(key)
 	if name == "" {
@@ -462,7 +468,18 @@ func MatchFallback(key string, candidates []*AppIdentity) string {
 		}
 		match = candidate.AppKey
 	}
-	return match
+	if match != "" {
+		return match
+	}
+	canonical := "exec:" + name
+	if key != canonical {
+		for _, candidate := range candidates {
+			if candidate.AppKey == canonical {
+				return canonical
+			}
+		}
+	}
+	return ""
 }
 
 func kernelComm(name string) string {
