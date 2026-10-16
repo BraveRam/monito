@@ -14,9 +14,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"monito/pkg/api"
-	"monito/pkg/tui"
-	"monito/pkg/util"
+	"github.com/BraveRam/monito/pkg/api"
+	"github.com/BraveRam/monito/pkg/tui"
+	"github.com/BraveRam/monito/pkg/util"
 )
 
 const version = "1.0.0"

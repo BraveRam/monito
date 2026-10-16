@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"time"
 
-	"monito/pkg/identity"
-	"monito/pkg/storage"
+	"github.com/BraveRam/monito/pkg/identity"
+	"github.com/BraveRam/monito/pkg/storage"
 )
 
 // LiveAppRate represents live transfer rates for an app

@@ -13,7 +13,7 @@ import (
 	"sync"
 	"time"
 
-	"monito/pkg/storage"
+	"github.com/BraveRam/monito/pkg/storage"
 )
 
 // DataProvider supplies live rates, collector diagnostics, and doctor checks to the API server

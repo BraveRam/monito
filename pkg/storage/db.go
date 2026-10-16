@@ -10,7 +10,7 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"monito/pkg/identity"
+	"github.com/BraveRam/monito/pkg/identity"
 )
 
 // TrafficRecord represents an aggregated usage record for an application

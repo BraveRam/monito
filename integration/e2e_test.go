@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"monito/pkg/api"
-	"monito/pkg/identity"
-	"monito/pkg/storage"
+	"github.com/BraveRam/monito/pkg/api"
+	"github.com/BraveRam/monito/pkg/identity"
+	"github.com/BraveRam/monito/pkg/storage"
 )
 
 func binaries(t *testing.T) string {

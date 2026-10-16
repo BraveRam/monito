@@ -8,9 +8,9 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
-	"monito/pkg/api"
-	"monito/pkg/storage"
-	"monito/pkg/util"
+	"github.com/BraveRam/monito/pkg/api"
+	"github.com/BraveRam/monito/pkg/storage"
+	"github.com/BraveRam/monito/pkg/util"
 )
 
 func (m Model) View() string {

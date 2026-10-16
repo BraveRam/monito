@@ -13,11 +13,11 @@ import (
 	"syscall"
 	"time"
 
-	"monito/pkg/api"
-	"monito/pkg/bpf"
-	"monito/pkg/identity"
-	"monito/pkg/storage"
-	"monito/pkg/util"
+	"github.com/BraveRam/monito/pkg/api"
+	"github.com/BraveRam/monito/pkg/bpf"
+	"github.com/BraveRam/monito/pkg/identity"
+	"github.com/BraveRam/monito/pkg/storage"
+	"github.com/BraveRam/monito/pkg/util"
 )
 
 type flowCollector interface {

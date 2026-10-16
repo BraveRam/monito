@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"monito/pkg/bpf"
-	"monito/pkg/identity"
-	"monito/pkg/storage"
+	"github.com/BraveRam/monito/pkg/bpf"
+	"github.com/BraveRam/monito/pkg/identity"
+	"github.com/BraveRam/monito/pkg/storage"
 )
 
 type finalCollector struct{ stopped bool }

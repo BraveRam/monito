@@ -1,4 +1,4 @@
-module monito
+module github.com/BraveRam/monito
 
 go 1.26.2
 

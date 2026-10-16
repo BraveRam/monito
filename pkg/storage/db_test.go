@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"monito/pkg/identity"
+	"github.com/BraveRam/monito/pkg/identity"
 )
 
 func TestStorageRecordAndQuery(t *testing.T) {

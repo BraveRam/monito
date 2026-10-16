@@ -8,9 +8,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"monito/pkg/api"
-	"monito/pkg/identity"
-	"monito/pkg/storage"
+	"github.com/BraveRam/monito/pkg/api"
+	"github.com/BraveRam/monito/pkg/identity"
+	"github.com/BraveRam/monito/pkg/storage"
 )
 
 func TestTUIViewAndKeyNavigation(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"time"
 
-	"monito/pkg/identity"
+	"github.com/BraveRam/monito/pkg/identity"
 )
 
 type identityQuery interface {

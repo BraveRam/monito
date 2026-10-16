@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"monito/pkg/identity"
-	"monito/pkg/storage"
+	"github.com/BraveRam/monito/pkg/identity"
+	"github.com/BraveRam/monito/pkg/storage"
 )
 
 func main() {

@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"monito/pkg/bpf"
+	"github.com/BraveRam/monito/pkg/bpf"
 )
 
 func main() {
