@@ -194,7 +194,7 @@ func run() error {
 	} else {
 		bpfCol, err := bpf.NewBPFCollector(*cgroupPath)
 		if err != nil {
-			return fmt.Errorf("load eBPF collector (requires CAP_BPF+CAP_NET_ADMIN): %w", err)
+			return fmt.Errorf("load eBPF collector (requires CAP_BPF+CAP_NET_ADMIN+CAP_PERFMON): %w", err)
 		}
 		daemon.bpfCollector = bpfCol
 		defer bpfCol.Close()

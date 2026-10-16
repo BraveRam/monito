@@ -16,9 +16,9 @@ RuntimeDirectoryMode=0755
 StateDirectory=monito
 StateDirectoryMode=0755
 
-# Minimal Linux capabilities required for eBPF cgroup accounting
-AmbientCapabilities=CAP_BPF CAP_NET_ADMIN
-CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN
+# eBPF cgroup accounting plus process-name metadata (get_current_comm).
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN CAP_PERFMON
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN CAP_PERFMON
 
 # Security Hardening
 ProtectSystem=strict

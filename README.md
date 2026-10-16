@@ -43,7 +43,7 @@ Monito cleanly separates the **privileged background collector daemon** (`monito
 
 1. **Continuous Accounting**: The background collector records traffic even when the TUI or terminal closes.
 2. **Single Database Writer**: Only the collector writes to the SQLite database. Clients query a versioned local API over a Unix domain socket (`/run/monito/monito.sock`).
-3. **Least Privilege**: The TUI and CLI never run as root. The system service runs as root with its capabilities bounded to `CAP_BPF` and `CAP_NET_ADMIN`. The read-only API socket permits all local users to query system-wide usage; it does not isolate usage by login account.
+3. **Least Privilege**: The TUI and CLI never run as root. The system service runs as root with its capabilities bounded to `CAP_BPF`, `CAP_NET_ADMIN`, and `CAP_PERFMON`. The read-only API socket permits all local users to query system-wide usage; it does not isolate usage by login account.
 
 ---
 
@@ -115,6 +115,7 @@ PIDs are temporary identifiers recycled by the kernel. Monito builds persistent 
 On Fedora 44 with Linux kernel 6.19 and `kernel.unprivileged_bpf_disabled = 2`, loading eBPF programs requires:
 - `CAP_BPF`
 - `CAP_NET_ADMIN`
+- `CAP_PERFMON` (required by the kernel for the process-name helper)
 
 The TUI and CLI run completely unprivileged. The background service runs as root with a bounded capability set and systemd filesystem hardening.
 
@@ -246,7 +247,7 @@ make kernel-test-binaries
 sudo ./scripts/test-kernel.sh
 ```
 
-The kernel tests verify concurrent packet accounting while snapshots run, then start the real daemon, transfer data between distinct TCP client/server processes, query the API as a regular user, and verify shutdown persistence and restart. They use temporary databases and sockets and do not install a service or overwrite existing history.
+The kernel tests first load and exercise the programs under the exact capability bounding set declared by the service, then verify concurrent packet accounting while snapshots run, then start the real daemon, transfer data between distinct TCP client/server processes, query the API as a regular user, and verify shutdown persistence and restart. They use temporary databases and sockets and do not install a service or overwrite existing history.
 
 The apps API emits traffic categories `0=loopback`, `1=private`, `2=external`, `3=unknown`, or `-1=mixed` when an app used several categories. This differs from the application-type label in `identity.category`.
 

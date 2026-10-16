@@ -87,7 +87,7 @@ func NewBPFCollector(cgroupPath string) (*BPFCollector, error) {
 		if errors.As(err, &verifier) {
 			return nil, fmt.Errorf("load BPF objects: %+v", verifier)
 		}
-		return nil, fmt.Errorf("load BPF objects: %w (check CAP_BPF / CAP_NET_ADMIN)", err)
+		return nil, fmt.Errorf("load BPF objects: %w (check CAP_BPF / CAP_NET_ADMIN / CAP_PERFMON)", err)
 	}
 
 	f, err := os.Open(cgroupPath)
