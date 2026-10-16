@@ -71,3 +71,7 @@ sudo ./scripts/test-kernel.sh       # Live eBPF and service sandbox tests
 sudo make uninstall                # Keeps usage history
 sudo make uninstall PURGE_DATA=1    # Also deletes history
 ```
+
+## License
+
+Dual-licensed under [MIT](LICENSE) or [GPL-2.0-only](LICENSE-GPL-2.0), at your choice. Bundled third-party files retain their own license notices.
