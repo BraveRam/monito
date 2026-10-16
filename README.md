@@ -15,8 +15,6 @@ go install github.com/BraveRam/monito/cmd/monitod@latest
 
 Add `$(go env GOPATH)/bin` to your `PATH` (or use your configured `GOBIN`). Run `sudo "$(command -v monitod)"` in one terminal, then `monito` as your regular user in another. The collector must stay running to record usage.
 
-The repository is currently private: configure authenticated Git access and set `GOPRIVATE=github.com/BraveRam/monito` before installing.
-
 ### System service
 
 For collection in the background, install the systemd service from source. This also requires Make:
