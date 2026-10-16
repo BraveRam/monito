@@ -9,5 +9,5 @@ export MONITO_EBPF_E2E=1
 export MONITO_BIN_DIR="$PWD/bin"
 # These tests use disposable databases/sockets and detach all BPF links on exit.
 # They neither install a service nor modify the user's existing database.
-./bin/bpf.test -test.run '^TestKernelConcurrentSnapshots$' -test.v -test.timeout 60s
+./bin/bpf.test -test.run '^TestKernel' -test.v -test.timeout 60s
 ./bin/e2e.test -test.run '^TestKernelEndToEnd$' -test.v -test.timeout 60s

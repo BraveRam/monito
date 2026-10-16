@@ -60,6 +60,7 @@ type BPFCollector struct {
 	objs           MonitoObjects
 	cgroupFile     *os.File
 	sockCreateLink link.Link
+	sockOpsLink    link.Link
 	previous       map[MonitoFlowKey]MonitoFlowMetrics
 	ingressLink    link.Link
 	egressLink     link.Link
@@ -109,6 +110,17 @@ func NewBPFCollector(cgroupPath string) (*BPFCollector, error) {
 		}
 		col.sockCreateLink = l
 	}
+
+	// TCP_LISTEN_CB is a syscall-context ownership refresh, not a handshake
+	// PID sample. Treat attachment failure as fatal to avoid silent omissions.
+	sockOps, err := link.AttachCgroup(link.CgroupOptions{
+		Path: cgroupPath, Attach: ebpf.AttachCGroupSockOps, Program: col.objs.OnSockops,
+	})
+	if err != nil {
+		col.Close()
+		return nil, fmt.Errorf("attach sockops: %w", err)
+	}
+	col.sockOpsLink = sockOps
 
 	// Attach cgroup_skb/ingress
 	if col.objs.OnIngress != nil {
@@ -214,7 +226,7 @@ func (c *BPFCollector) StopAccounting() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	var errs []error
-	for _, hook := range []*link.Link{&c.ingressLink, &c.egressLink, &c.sockCreateLink} {
+	for _, hook := range []*link.Link{&c.ingressLink, &c.egressLink, &c.sockOpsLink, &c.sockCreateLink} {
 		if *hook != nil {
 			if err := (*hook).Close(); err != nil {
 				errs = append(errs, err)
@@ -283,6 +295,11 @@ func (c *BPFCollector) Close() error {
 	var errs []error
 	if c.sockCreateLink != nil {
 		if err := c.sockCreateLink.Close(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if c.sockOpsLink != nil {
+		if err := c.sockOpsLink.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

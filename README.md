@@ -54,7 +54,7 @@ Attributing network traffic on Linux is complex due to asynchronous packet proce
 - **The Ingress Trap**: Ingress packet delivery executes inside software interrupt context (`softirqd`). At packet arrival, `bpf_get_current_pid_tgid()` returns `0` (swapper/idle) or an interrupted, completely unrelated task. Monito **never** assumes the current PID at a packet hook owns the packet.
 - **Ownership Retention**:
   1. Monito hooks `cgroup/sock_create` in the creating application's process context.
-  2. It stores `{ pid, cgroup_id, comm }` in socket-local eBPF storage. `BPF_F_CLONE` copies that ownership from a listening socket to its accepted TCP children, without sampling a PID from handshake processing.
+  2. It stores `{ pid, cgroup_id, comm }` in socket-local eBPF storage and refreshes it in the syscall-context `TCP_LISTEN_CB`. `BPF_F_CLONE` copies that ownership from a listening socket to its accepted TCP children, without sampling a PID from handshake processing.
   3. Ingress and egress hooks read this retained ownership from the packet's socket. Accepted sockets are charged to the listener's creator; passing descriptors between processes does not transfer that ownership.
   4. Sockets created before the collector started or without retained metadata are recorded as `Unattributed Traffic`, with their observed traffic category retained.
   5. Userspace differences cumulative counters without deleting active entries. The flow map holds 16,384 PID/category entries with LRU eviction; generations detect recreated entries. Extreme churn exceeding that capacity between snapshots can still lose unsampled data. Allocation failures are exposed through `MapErrors`.

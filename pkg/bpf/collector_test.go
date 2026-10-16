@@ -1,10 +1,14 @@
 package bpf
 
 import (
+	"fmt"
+	"net"
 	"os"
 	"runtime"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 )
 
 func TestCumulativeDeltasSurviveUpdatesAndRecreation(t *testing.T) {
@@ -95,5 +99,61 @@ func TestKernelConcurrentSnapshots(t *testing.T) {
 		default:
 			runtime.Gosched()
 		}
+	}
+}
+
+// Inspect the storage itself as well as packet counters so a failed integration
+// test distinguishes listener registration from accepted-socket inheritance.
+func TestKernelSocketOwnership(t *testing.T) {
+	if os.Getenv("MONITO_EBPF_E2E") != "1" {
+		t.Skip("requires privileged kernel test")
+	}
+	collector, err := NewBPFCollector("/sys/fs/cgroup")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer collector.Close()
+	t.Logf("storage flags=%#x", collector.objs.SockOwners.Flags())
+	l, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	checkOwner := func(name string, socket syscall.Conn) {
+		raw, err := socket.SyscallConn()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var owner MonitoProcInfo
+		var lookupErr error
+		if err := raw.Control(func(fd uintptr) { key := uint32(fd); lookupErr = collector.objs.SockOwners.Lookup(&key, &owner) }); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%s: owner=%+v lookup=%v counters=%+v", name, owner, lookupErr, collector.ReadCounters())
+		if lookupErr != nil || owner.Pid != uint32(os.Getpid()) {
+			t.Errorf("%s missing correct ownership", name)
+		}
+	}
+	checkOwner("listener", l.(syscall.Conn))
+	done := make(chan error, 1)
+	go func() {
+		c, err := net.DialTimeout("tcp4", l.Addr().String(), 3*time.Second)
+		if err != nil {
+			done <- err
+			return
+		}
+		defer c.Close()
+		_, err = fmt.Fprintln(c, "ownership probe")
+		done <- err
+	}()
+	l.(*net.TCPListener).SetDeadline(time.Now().Add(3 * time.Second))
+	accepted, err := l.Accept()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer accepted.Close()
+	checkOwner("accepted", accepted.(syscall.Conn))
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 }

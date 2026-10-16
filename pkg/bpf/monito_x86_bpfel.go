@@ -78,6 +78,7 @@ type MonitoProgramSpecs struct {
 	OnEgress     *ebpf.ProgramSpec `ebpf:"on_egress"`
 	OnIngress    *ebpf.ProgramSpec `ebpf:"on_ingress"`
 	OnSockCreate *ebpf.ProgramSpec `ebpf:"on_sock_create"`
+	OnSockops    *ebpf.ProgramSpec `ebpf:"on_sockops"`
 }
 
 // MonitoMapSpecs contains maps before they are loaded into the kernel.
@@ -144,6 +145,7 @@ type MonitoPrograms struct {
 	OnEgress     *ebpf.Program `ebpf:"on_egress"`
 	OnIngress    *ebpf.Program `ebpf:"on_ingress"`
 	OnSockCreate *ebpf.Program `ebpf:"on_sock_create"`
+	OnSockops    *ebpf.Program `ebpf:"on_sockops"`
 }
 
 func (p *MonitoPrograms) Close() error {
@@ -151,6 +153,7 @@ func (p *MonitoPrograms) Close() error {
 		p.OnEgress,
 		p.OnIngress,
 		p.OnSockCreate,
+		p.OnSockops,
 	)
 }
 

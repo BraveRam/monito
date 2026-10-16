@@ -104,6 +104,26 @@ int on_sock_create(struct bpf_sock *sk) {
     return 1;
 }
 
+// listen() runs in the application context. Refresh listener ownership here
+// before the kernel clones it for incoming connections; never use the current
+// PID from PASSIVE_ESTABLISHED_CB (which runs on the receive path).
+SEC("sockops")
+int on_sockops(struct bpf_sock_ops *ctx) {
+    if (ctx->op != BPF_SOCK_OPS_TCP_LISTEN_CB) return 1;
+    struct bpf_sock *sk = ctx->sk;
+    if (!sk) return 1;
+    struct proc_info proc = {};
+    proc.pid = (__u32)(bpf_get_current_pid_tgid() >> 32);
+    proc.tgid = proc.pid;
+    proc.cgroup_id = bpf_get_current_cgroup_id();
+    bpf_get_current_comm(&proc.comm, sizeof(proc.comm));
+    struct proc_info *owner = bpf_sk_storage_get(&sock_owners, sk, &proc, BPF_SK_STORAGE_GET_F_CREATE);
+    if (owner) *owner = proc;
+    else bump_counter(5);
+    if (proc.pid) bpf_map_update_elem(&pid_metadata, &proc.pid, &proc, BPF_ANY);
+    return 1;
+}
+
 // Cumulative counters are never reset by userspace. A generation distinguishes
 // a newly allocated LRU entry from an older snapshot of the same PID/category.
 static __always_inline void account(struct flow_key *key, __u32 bytes, int ingress) {
