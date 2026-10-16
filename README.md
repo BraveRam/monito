@@ -6,21 +6,10 @@ A Linux network monitor that shows download, upload, live speed, and daily usage
 
 Requires Linux with cgroup v2 and eBPF support, Go 1.26.2+, and GCC. Developed and tested on Fedora.
 
-### Go install
+The recommended setup installs a background systemd collector and the dashboard:
 
 ```bash
-go install github.com/BraveRam/monito/cmd/monito@latest
-go install github.com/BraveRam/monito/cmd/monitod@latest
-```
-
-Add `$(go env GOPATH)/bin` to your `PATH` (or use your configured `GOBIN`). Run `sudo "$(command -v monitod)"` in one terminal, then `monito` as your regular user in another. The collector must stay running to record usage.
-
-### System service
-
-For collection in the background, install the systemd service from source. This also requires Make:
-
-```bash
-sudo dnf install go gcc make
+sudo dnf install go gcc make git
 git clone https://github.com/BraveRam/monito.git
 cd monito
 sudo make install
@@ -39,6 +28,17 @@ sudo make install
 sudo systemctl daemon-reload
 sudo systemctl restart monito
 ```
+
+### Optional: binaries with Go
+
+If you only need the binaries:
+
+```bash
+go install github.com/BraveRam/monito/cmd/monito@latest
+go install github.com/BraveRam/monito/cmd/monitod@latest
+```
+
+Add `$(go env GOPATH)/bin` to your `PATH` (or use your configured `GOBIN`). This does not install or update the systemd service. For manual use, run `sudo "$(command -v monitod)"` in one terminal and `monito` as your regular user in another; collection stops when the daemon exits.
 
 ## Use
 
