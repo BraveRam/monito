@@ -1,0 +1,12 @@
+[Unit]
+Description=Monito Background Network Accounting Collector (User Mode)
+Documentation=https://github.com/BraveRam/monito
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/monitod
+Restart=on-failure
+RestartSec=3s
+
+[Install]
+WantedBy=default.target

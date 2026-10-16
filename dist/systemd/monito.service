@@ -1,0 +1,40 @@
+[Unit]
+Description=Monito Background Network Accounting Collector Daemon
+Documentation=https://github.com/BraveRam/monito
+After=network.target local-fs.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/monitod --db=/var/lib/monito/monito.db --socket=/run/monito/monito.sock --cgroup=/sys/fs/cgroup
+Restart=always
+RestartSec=3s
+
+# Runtime and storage directories
+RuntimeDirectory=monito
+RuntimeDirectoryMode=0755
+StateDirectory=monito
+StateDirectoryMode=0755
+
+# Minimal Linux capabilities required for eBPF cgroup accounting
+AmbientCapabilities=CAP_BPF CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_BPF CAP_NET_ADMIN
+
+# Security Hardening
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+ProtectControlGroups=false
+ProtectKernelTunables=true
+ProtectKernelModules=true
+MemoryDenyWriteExecute=false
+LockPersonality=true
+RestrictRealtime=true
+RestrictNamespaces=true
+
+# Resource Limits
+LimitMEMLOCK=infinity
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

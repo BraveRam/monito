@@ -1,0 +1,99 @@
+package bpf
+
+import (
+	"os"
+	"runtime"
+	"sync"
+	"testing"
+)
+
+func TestCumulativeDeltasSurviveUpdatesAndRecreation(t *testing.T) {
+	first := MonitoFlowMetrics{Generation: 10, RxBytes: 100, TxBytes: 200, RxPackets: 1, TxPackets: 2}
+	second := MonitoFlowMetrics{Generation: 10, RxBytes: 130, TxBytes: 250, RxPackets: 2, TxPackets: 3}
+	got := counterDelta(second, first)
+	if got.RxBytes != 30 || got.TxBytes != 50 || got.RxPackets != 1 || got.TxPackets != 1 {
+		t.Fatalf("delta = %+v", got)
+	}
+	// A new LRU entry may already exceed the old snapshot; generation, not a
+	// counter-decrease heuristic, must identify recreation.
+	recreated := MonitoFlowMetrics{Generation: 11, RxBytes: 300, TxBytes: 400}
+	if got := counterDelta(recreated, second); got.RxBytes != 300 || got.TxBytes != 400 {
+		t.Fatalf("recreated delta = %+v", got)
+	}
+	if got := counterDelta(second, second); got.RxBytes != 0 || got.TxBytes != 0 {
+		t.Fatalf("unchanged snapshot counted twice: %+v", got)
+	}
+}
+
+// TestKernelConcurrentSnapshots exercises the actual kernel programs while
+// snapshots race with concurrent packet accounting. It needs no cgroup attach.
+func TestKernelConcurrentSnapshots(t *testing.T) {
+	if os.Getenv("MONITO_EBPF_E2E") != "1" {
+		t.Skip("requires privileged kernel test")
+	}
+	var objs MonitoObjects
+	if err := LoadMonitoObjects(&objs, nil); err != nil {
+		t.Fatalf("load programs: %+v", err)
+	}
+	c := &BPFCollector{objs: objs, previous: make(map[MonitoFlowKey]MonitoFlowMetrics)}
+	defer c.Close()
+	// Ethernet + a minimal IPv4/UDP packet. Program.Test injects a synthetic
+	// skb with no owning socket, isolating this from real host traffic.
+	packet := make([]byte, 14+20+8+32)
+	packet[12], packet[13] = 0x08, 0x00
+	packet[14], packet[16], packet[17], packet[22], packet[23] = 0x45, 0, 60, 64, 17
+	copy(packet[26:30], []byte{10, 0, 0, 1})
+	copy(packet[30:34], []byte{10, 0, 0, 2})
+	if ret, _, err := c.objs.OnEgress.Test(packet); err != nil || ret != 1 {
+		t.Fatalf("test packet: ret=%d err=%v", ret, err)
+	}
+	first, err := c.DrainDeltas()
+	if err != nil || len(first) != 1 {
+		t.Fatalf("initial delta=%+v err=%v", first, err)
+	}
+	bytesPerPacket := first[0].TxBytes
+	const workers, packets = 16, 100
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < packets; j++ {
+				if _, _, err := c.objs.OnEgress.Test(packet); err != nil {
+					t.Error(err)
+					return
+				}
+			}
+		}()
+	}
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	var totalBytes, totalPackets uint64
+	for {
+		deltas, err := c.DrainDeltas()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, delta := range deltas {
+			totalBytes += delta.TxBytes
+			totalPackets += delta.TxPackets
+		}
+		select {
+		case <-done:
+			last, err := c.DrainDeltas()
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, delta := range last {
+				totalBytes += delta.TxBytes
+				totalPackets += delta.TxPackets
+			}
+			if totalPackets != workers*packets || totalBytes != workers*packets*bytesPerPacket {
+				t.Fatalf("lost or duplicated traffic: bytes=%d packets=%d; want bytes=%d packets=%d", totalBytes, totalPackets, workers*packets*bytesPerPacket, workers*packets)
+			}
+			return
+		default:
+			runtime.Gosched()
+		}
+	}
+}
