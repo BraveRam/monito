@@ -1,0 +1,60 @@
+name: Ubuntu live collector
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: monito-deb
+          path: dist/deb
+
+      - name: Compile kernel tests as regular user
+        run: |
+          uname -a
+          systemd --version
+          test -f /sys/kernel/btf/vmlinux
+          make kernel-test-binaries
+
+      - name: Install and start the packaged collector
+        run: |
+          sudo apt-get install -y ./dist/deb/monito_*.deb
+          sudo systemctl enable --now monito
+          monito status --json
+
+      - name: Test live eBPF and the service sandbox
+        run: sudo env MONITO_BIN_DIR=/usr/bin MONITO_SERVICE_BINARY=/usr/bin/monitod ./scripts/test-kernel.sh
+
+      - name: Verify the installed service captured traffic
+        run: |
+          monito status --json | python3 -c '
+          import json, sys
+          s = json.load(sys.stdin)
+          assert s["total_ingress_packets"] + s["total_egress_packets"] > 0, s
+          assert s["map_errors"] == 0, s
+          assert s["recovery_errors"] == 0, s
+          print(s)
+          '
+          sudo systemctl restart monito
+          monito status --json
+
+      - name: Collector logs
+        if: failure()
+        run: sudo journalctl -u monito --no-pager -n 100
+
+      - name: Stop collector
+        if: always()
+        run: sudo systemctl stop monito || true

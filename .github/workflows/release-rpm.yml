@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/release-rpm.yml'
+      - '.github/workflows/ubuntu-kernel.yml'
       - 'packaging/**'
       - 'scripts/build-rpm.sh'
       - 'scripts/test-rpm.sh'
@@ -112,9 +113,14 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+  ubuntu-kernel:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: deb
+    uses: ./.github/workflows/ubuntu-kernel.yml
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [checks, rpm, deb]
+    needs: [checks, rpm, deb, ubuntu-kernel]
     runs-on: ubuntu-latest
     permissions:
       contents: write

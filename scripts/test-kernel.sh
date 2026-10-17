@@ -6,7 +6,7 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 export MONITO_EBPF_E2E=1
-export MONITO_BIN_DIR="$PWD/bin"
+export MONITO_BIN_DIR="${MONITO_BIN_DIR:-$PWD/bin}"
 # These tests use disposable databases/sockets and detach all BPF links on exit.
 # They neither install a service nor modify the user's existing database.
 # Run the kernel tests with precisely the service's bounding set. Running only

@@ -6,8 +6,9 @@ if [[ $EUID -ne 0 ]]; then
     echo 'Run this service sandbox check with sudo.' >&2
     exit 1
 fi
-service_binary=/usr/local/bin/monitod
-if ! cmp -s "$PWD/bin/monitod" "$service_binary"; then
+bin_dir="${MONITO_BIN_DIR:-$PWD/bin}"
+service_binary="${MONITO_SERVICE_BINARY:-/usr/local/bin/monitod}"
+if ! cmp -s "$bin_dir/monitod" "$service_binary"; then
     echo 'Install the current build with sudo make install before this check.' >&2
     exit 1
 fi
@@ -33,5 +34,5 @@ if ! systemd-run --collect --unit="$unit" "${properties[@]}" \
     exit 1
 fi
 # Type=notify must make the API immediately usable when startup returns.
-"$PWD/bin/monito" status --socket="/run/$unit/test.sock" --json
+"$bin_dir/monito" status --socket="/run/$unit/test.sock" --json
 printf 'Full service sandbox and readiness check passed.\n'
