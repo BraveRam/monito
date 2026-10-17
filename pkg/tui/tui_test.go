@@ -181,6 +181,42 @@ func TestStaleResponsesAndModalQuit(t *testing.T) {
 	}
 }
 
+func TestFirstSeenConvertsToUTC(t *testing.T) {
+	m := NewModel(api.NewClient("/dev/null"))
+	m.width, m.height = 180, 40
+	m.detailApp = &api.AppUsageResponse{Identity: &identity.AppIdentity{
+		DisplayName: "curl",
+		FirstSeen:   time.Date(2026, 10, 17, 1, 12, 16, 0, time.FixedZone("EAT", 3*60*60)),
+	}}
+	if view := m.renderDetailModal(); !strings.Contains(view, "2026-10-16 22:12:16 UTC") {
+		t.Fatalf("First Seen did not convert the stored offset to UTC:\n%s", view)
+	}
+}
+
+func TestCoverageDoesNotRoundPartialAttributionToComplete(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		unattributed int64
+		want         string
+	}{
+		{"complete", 0, "100.0%"},
+		{"one byte missing", 1, ">99.9%"},
+		{"rounding to 100", 49, ">99.9%"},
+		{"99.9 percent", 100, "99.9%"},
+		{"half", 50_000, "50.0%"},
+		{"none", 100_000, "0.0%"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m := NewModel(api.NewClient("/dev/null"))
+			m.width = 200
+			m.summary = &storage.DaySummary{TotalBytes: 100_000, UnattributedBytes: tt.unattributed}
+			if view := m.renderCoverage(); !strings.Contains(view, "App attribution: "+tt.want+" |") {
+				t.Fatalf("expected %q, got %q", tt.want, view)
+			}
+		})
+	}
+}
+
 func TestDashboardLabelsCoverageAndWidths(t *testing.T) {
 	m := NewModel(api.NewClient("/dev/null"))
 	m.connected = true

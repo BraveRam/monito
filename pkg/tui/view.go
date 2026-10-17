@@ -134,7 +134,11 @@ func (m Model) renderCoverage() string {
 	text := "App attribution: no recorded traffic"
 	if m.summary != nil && m.summary.TotalBytes > 0 {
 		attributed := m.summary.TotalBytes - m.summary.UnattributedBytes
-		text = fmt.Sprintf("App attribution: %.1f%% | Unattributed: %s", float64(attributed)*100/float64(m.summary.TotalBytes), util.FormatBytes(m.summary.UnattributedBytes))
+		coverage := fmt.Sprintf("%.1f%%", float64(attributed)*100/float64(m.summary.TotalBytes))
+		if m.summary.UnattributedBytes > 0 && coverage == "100.0%" {
+			coverage = ">99.9%"
+		}
+		text = fmt.Sprintf("App attribution: %s | Unattributed: %s", coverage, util.FormatBytes(m.summary.UnattributedBytes))
 		if m.summary.UnattributedBytes > 0 {
 			text += "\nUnattributed means no confirmed app owner; old bytes cannot be assigned retroactively."
 		}
@@ -365,7 +369,7 @@ func (m Model) renderDetailModal() string {
 		mutedText.Render("Category:      "), app.Identity.Category,
 		mutedText.Render("Executable:    "), app.Identity.ExecutablePath,
 		mutedText.Render("cgroup v2:     "), app.Identity.CgroupPath,
-		mutedText.Render("First Seen:    "), app.Identity.FirstSeen.Format("2006-01-02 15:04:05 UTC"),
+		mutedText.Render("First Seen:    "), app.Identity.FirstSeen.UTC().Format("2006-01-02 15:04:05 UTC"),
 		headerLabel.Render("7-Day Usage History:"),
 		strings.Join(histLines, "\n"),
 		lipgloss.NewStyle().Foreground(accentColor).Render("Press [Esc] or [Enter] to return to dashboard"),
