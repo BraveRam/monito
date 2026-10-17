@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           monito
-Version:        1.0.1
+Version:        1.1.0
 Release:        1%{?dist}
 Summary:        Per-application Linux network traffic monitor
 License:        MIT OR GPL-2.0-only
@@ -55,6 +55,9 @@ sed -i 's#/usr/local/bin/monitod#%{_bindir}/monitod#' \
 %{_unitdir}/monito.service
 
 %changelog
+* Sat Oct 17 2026 Monito contributors - 1.1.0-1
+- Add Ubuntu DEB packaging alongside Fedora RPM releases
+
 * Sat Oct 17 2026 Monito contributors - 1.0.1-1
 - Use decimal units for traffic sizes and rates
 - Convert First Seen timestamps to UTC before displaying them

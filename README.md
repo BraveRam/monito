@@ -4,7 +4,9 @@ A Linux network monitor with a Rust eBPF collector and a Go dashboard. It shows 
 
 ## Install
 
-The RPM release targets Fedora 44 on x86_64. It installs the dashboard, background collector, and systemd service. Linux cgroup v2, eBPF, and kernel BTF support are required.
+Packages include the dashboard, collector, and systemd service. Requires an x86_64/amd64 Linux system with cgroup v2, eBPF, and kernel BTF support.
+
+**Fedora 44:**
 
 ```bash
 sudo dnf install https://github.com/BraveRam/monito/releases/latest/download/monito.rpm
@@ -12,9 +14,19 @@ sudo systemctl enable --now monito
 monito
 ```
 
+**Ubuntu 24.04 LTS:**
+
+Download [monito.deb](https://github.com/BraveRam/monito/releases/latest/download/monito.deb), then run:
+
+```bash
+sudo apt install ./monito.deb
+sudo systemctl enable --now monito
+monito
+```
+
 Run `monito` as your regular user. Only installation and the collector service need root.
 
-To update, rerun the RPM install command. If switching from a source installation, run `sudo make uninstall` in the old checkout first; this keeps your history.
+To update, install the latest package again. For Ubuntu, download the new `.deb` first. If switching from a source installation, run `sudo make uninstall` in the old checkout first; this keeps your history.
 
 To build from source (Go 1.26.2+ and GCC):
 
@@ -90,12 +102,15 @@ sudo ./scripts/test-kernel.sh       # Live eBPF and service sandbox tests
 
 The Rust collector build and developer requirements are documented in [bpf/rust](bpf/rust/README.md). Normal builds and `go install` use the included bytecode and do not need Rust.
 
-Build a local RPM with `make rpm` after installing `rpm-build` and `systemd-rpm-macros`. Packages appear in `dist/rpm/`; verify one with `./scripts/test-rpm.sh dist/rpm/monito-*.rpm` (`cpio` required). Pushing a version tag matching `packaging/rpm/monito.spec` (for example, `v1.0.0`) tests, builds, and publishes the RPM on GitHub Releases.
+Build RPMs with `make rpm` (`rpm-build`, `systemd-rpm-macros`) or DEBs on Ubuntu with `make deb` (`build-essential`, `debhelper`, `dpkg-dev`, `golang-any`). Outputs go to `dist/rpm/` and `dist/deb/`. Test extracted binaries with `scripts/test-rpm.sh path/to/package.rpm` or `scripts/test-deb.sh path/to/package.deb`.
+
+Version tags matching the RPM spec and Debian changelog run CI and publish both packages on GitHub Releases.
 
 ## Uninstall
 
 ```bash
 sudo dnf remove monito             # Keeps usage history
+sudo apt remove monito             # Ubuntu; keeps usage history
 ```
 
 For a source installation:

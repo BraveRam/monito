@@ -19,6 +19,7 @@ tar -czf "$topdir/SOURCES/monito-${version}.tar.gz" \
     --exclude='./.git' \
     --exclude='./bin' \
     --exclude='./dist/rpm' \
+    --exclude='./dist/deb' \
     --exclude='./bpf/rust/target' \
     --exclude='./monito' \
     --exclude='./monitod' \

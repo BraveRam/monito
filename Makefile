@@ -1,7 +1,7 @@
 GO ?= go
 CARGO ?= cargo
 BPF_CARGO ?= cargo +nightly-2026-10-16
-VERSION ?= 1.0.1
+VERSION ?= 1.1.0
 GO_LDFLAGS ?= -s -w
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
@@ -90,3 +90,7 @@ kernel-test-binaries: build
 .PHONY: rpm
 rpm:
 	VERSION=$(VERSION) ./scripts/build-rpm.sh
+
+.PHONY: deb
+deb:
+	VERSION=$(VERSION) ./scripts/build-deb.sh

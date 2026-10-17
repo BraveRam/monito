@@ -1,0 +1,16 @@
+Source: monito
+Section: net
+Priority: optional
+Maintainer: Monito contributors <BraveRam@users.noreply.github.com>
+Build-Depends: debhelper-compat (= 13), golang-any, gcc, make
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+Homepage: https://github.com/BraveRam/monito
+
+Package: monito
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}, systemd
+Description: per-application Linux network traffic monitor
+ Monito records network usage by application and provides a terminal dashboard
+ for daily totals and live transfer rates. Includes the privileged collector
+ and its systemd service. Requires cgroup v2, kernel BTF, and eBPF support.

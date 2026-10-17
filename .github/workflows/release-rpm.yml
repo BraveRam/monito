@@ -1,4 +1,4 @@
-name: Release RPM
+name: Release packages
 
 on:
   workflow_dispatch:
@@ -8,6 +8,9 @@ on:
       - 'packaging/**'
       - 'scripts/build-rpm.sh'
       - 'scripts/test-rpm.sh'
+      - 'scripts/build-deb.sh'
+      - 'scripts/test-deb.sh'
+      - 'scripts/test-deb-install.sh'
       - 'Makefile'
       - 'cmd/**'
       - 'pkg/**'
@@ -68,9 +71,50 @@ jobs:
           compression-level: 0
           if-no-files-found: error
 
+  deb:
+    runs-on: ubuntu-24.04
+    container: ubuntu:24.04
+    steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y build-essential ca-certificates debhelper dpkg-dev git golang-any util-linux
+          useradd --create-home --uid 1001 builder
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Prepare regular-user build
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Check version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="$(dpkg-parsechangelog -l packaging/deb/debian/changelog -SVersion)"
+          test "${GITHUB_REF_NAME#v}" = "${version%-*}"
+
+      - name: Build DEB
+        run: runuser -u builder -- make deb
+
+      - name: Verify packaged binaries
+        run: runuser -u builder -- bash -c './scripts/test-deb.sh dist/deb/monito_*.deb'
+
+      - name: Test installation and upgrade lifecycle
+        run: ./scripts/test-deb-install.sh dist/deb/monito_*.deb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monito-deb
+          path: dist/deb/*.deb
+          compression-level: 0
+          if-no-files-found: error
+
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [checks, rpm]
+    needs: [checks, rpm, deb]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -80,14 +124,21 @@ jobs:
           name: monito-rpm
           path: dist/rpm
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: monito-deb
+          path: dist/deb
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          rpm_file="$(find dist/rpm -maxdepth 1 -name 'monito-*.rpm' -print -quit)"
-          cp "$rpm_file" dist/rpm/monito.rpm
-          (cd dist/rpm && sha256sum *.rpm > SHA256SUMS)
+          mkdir release
+          cp dist/rpm/*.rpm dist/deb/*.deb release/
+          cp release/monito-*.rpm release/monito.rpm
+          cp release/monito_*.deb release/monito.deb
+          (cd release && sha256sum *.rpm *.deb > SHA256SUMS)
           gh release create "$GITHUB_REF_NAME" \
-            "$rpm_file" dist/rpm/monito.rpm dist/rpm/SHA256SUMS \
+            release/*.rpm release/*.deb release/SHA256SUMS \
             --repo "$GITHUB_REPOSITORY" \
             --generate-notes

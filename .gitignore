@@ -4,6 +4,7 @@
 /monitod
 /prototype
 /dist/rpm/
+/dist/deb/
 
 # SQLite databases
 *.db

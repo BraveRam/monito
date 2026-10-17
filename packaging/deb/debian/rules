@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+
+export DH_VERBOSE = 1
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+VERSION := $(shell dpkg-parsechangelog -SVersion | sed 's/-[^-]*$$//')
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE) build VERSION=$(VERSION)
+
+override_dh_auto_test:
+	MONITO_BIN_DIR=$(CURDIR)/bin go test ./...
+
+override_dh_auto_install:
+	install -Dpm 0755 bin/monito debian/monito/usr/bin/monito
+	install -Dpm 0755 bin/monitod debian/monito/usr/bin/monitod
+	install -Dpm 0644 dist/systemd/monito.service debian/monito/usr/lib/systemd/system/monito.service
+	sed -i 's#/usr/local/bin/monitod#/usr/bin/monitod#' debian/monito/usr/lib/systemd/system/monito.service
+
+override_dh_installsystemd:
+	dh_installsystemd --no-enable --no-start --restart-after-upgrade
+
+# Go binaries are already stripped by make build.
+override_dh_dwz:
+	@:
+
+override_dh_strip:
+	@:

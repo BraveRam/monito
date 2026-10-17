@@ -19,7 +19,7 @@ import (
 	"github.com/BraveRam/monito/pkg/util"
 )
 
-var version = "1.0.1"
+var version = "1.1.0"
 
 func main() {
 	if len(os.Args) < 2 {
