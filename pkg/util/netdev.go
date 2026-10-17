@@ -59,35 +59,32 @@ func ReadInterfaceStats() ([]InterfaceStat, error) {
 	return stats, nil
 }
 
-// FormatBytes formats byte counts into human-readable units (e.g. 1.25 MB)
+// FormatBytes formats byte counts using decimal units (1 KB = 1000 bytes).
 func FormatBytes(b int64) string {
-	const unit = 1024
+	const unit = 1000
 	if b < unit {
 		return fmt.Sprintf("%d B", b)
 	}
 	div, exp := int64(unit), 0
-	for n := b / unit; n >= unit; n /= unit {
+	units := []string{"KB", "MB", "GB", "TB", "PB"}
+	for n := b / unit; n >= unit && exp < len(units)-1; n /= unit {
 		div *= unit
 		exp++
 	}
-	units := []string{"KB", "MB", "GB", "TB", "PB"}
 	return fmt.Sprintf("%.2f %s", float64(b)/float64(div), units[exp])
 }
 
-// FormatRate formats transfer rates in bytes/sec to human-readable strings
+// FormatRate formats bytes per second using decimal units (1 KB/s = 1000 B/s).
 func FormatRate(bps float64) string {
-	const unit = 1024.0
+	const unit = 1000.0
 	if bps < unit {
 		return fmt.Sprintf("%.0f B/s", bps)
 	}
 	div, exp := unit, 0
-	for n := bps / unit; n >= unit; n /= unit {
+	units := []string{"KB/s", "MB/s", "GB/s"}
+	for n := bps / unit; n >= unit && exp < len(units)-1; n /= unit {
 		div *= unit
 		exp++
-	}
-	units := []string{"KB/s", "MB/s", "GB/s"}
-	if exp >= len(units) {
-		exp = len(units) - 1
 	}
 	return fmt.Sprintf("%.1f %s", bps/div, units[exp])
 }

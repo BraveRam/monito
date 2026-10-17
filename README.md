@@ -72,6 +72,8 @@ Dashboard keys: `↑/↓` select, `Enter` details, `←/→` change day, `T` tod
 - **Traffic mix:** external, LAN/private, loopback, or unknown network traffic.
 - **App attribution:** percentage of bytes with a known app owner. Unattributed bytes cannot be assigned retroactively.
 
+Sizes and rates use decimal units: 1 KB = 1,000 bytes and 1 GB = 1,000,000,000 bytes.
+
 Usage includes IP headers and retransmissions. Loopback traffic counts at both sending and receiving apps. VPNs, proxies, and network offloads can make totals differ from interface counters or ISP bills.
 
 History starts when collection starts and is stored at `/var/lib/monito/monito.db`. All local users can read system-wide usage through the collector.
