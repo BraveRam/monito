@@ -16,9 +16,10 @@ monito
 
 **Ubuntu 24.04 LTS:**
 
-Download [monito.deb](https://github.com/BraveRam/monito/releases/latest/download/monito.deb), then run:
+Download the DEB first; apt installs the local file:
 
 ```bash
+curl -fLO https://github.com/BraveRam/monito/releases/latest/download/monito.deb
 sudo apt install ./monito.deb
 sudo systemctl enable --now monito
 monito

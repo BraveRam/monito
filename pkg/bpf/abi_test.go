@@ -60,11 +60,11 @@ func TestEmbeddedCollectorABI(t *testing.T) {
 		attach ebpf.AttachType
 		target string
 	}{
-		"on_sock_create": {ebpf.CGroupSock, ebpf.AttachCGroupInetSockCreate, ""},
-		"on_sockops":     {ebpf.SockOps, ebpf.AttachCGroupSockOps, ""},
-		"on_socket_io":   {ebpf.Tracing, ebpf.AttachTraceFEntry, "tcp_sendmsg"},
-		"on_ingress":     {ebpf.CGroupSKB, ebpf.AttachNone, ""},
-		"on_egress":      {ebpf.CGroupSKB, ebpf.AttachCGroupInetEgress, ""},
+		"on_sock_create":   {ebpf.CGroupSock, ebpf.AttachCGroupInetSockCreate, ""},
+		"on_socket_listen": {ebpf.Tracing, ebpf.AttachTraceFEntry, "inet_csk_listen_start"},
+		"on_socket_io":     {ebpf.Tracing, ebpf.AttachTraceFEntry, "tcp_sendmsg"},
+		"on_ingress":       {ebpf.CGroupSKB, ebpf.AttachNone, ""},
+		"on_egress":        {ebpf.CGroupSKB, ebpf.AttachCGroupInetEgress, ""},
 	} {
 		p := spec.Programs[name]
 		if p == nil {

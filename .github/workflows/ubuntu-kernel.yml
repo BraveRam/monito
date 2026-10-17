@@ -7,6 +7,37 @@ permissions:
   contents: read
 
 jobs:
+  ga-kernel:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/download-artifact@v4
+        with:
+          name: monito-deb
+          path: dist/deb
+      - name: Prepare Ubuntu 6.8 GA kernel VM
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y qemu-system-x86 cpio
+          mkdir -p /tmp/monito-ga
+          cd /tmp/monito-ga
+          kernel_package=$(apt-cache depends linux-image-generic | awk '/Depends: linux-image-[0-9]/{print $2; exit}')
+          test -n "$kernel_package"
+          case "$kernel_package" in linux-image-6.8.*) ;; *) echo "Expected Ubuntu GA 6.8 kernel, got $kernel_package"; exit 1 ;; esac
+          apt-get download "$kernel_package" busybox-static
+          for package in ./*.deb; do dpkg-deb -x "$package" root; done
+      - name: Test packaged collector on Ubuntu GA kernel
+        run: |
+          make kernel-test-binaries
+          dpkg-deb -x dist/deb/monito_*.deb /tmp/monito-ga/package
+          busybox=$(find /tmp/monito-ga/root -type f -name busybox -print -quit)
+          MONITO_BIN_DIR=/tmp/monito-ga/package/usr/bin ./scripts/test-kernel-vm.sh \
+            /tmp/monito-ga/root/boot/vmlinuz-6.8.* "$busybox"
+
   kernel:
     runs-on: ubuntu-24.04
     timeout-minutes: 15

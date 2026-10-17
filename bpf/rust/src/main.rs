@@ -7,15 +7,15 @@
 use aya_ebpf::{
     bindings::{
         __sk_buff, BPF_ANY, BPF_F_CLONE, BPF_F_NO_PREALLOC, BPF_NOEXIST,
-        BPF_SK_STORAGE_GET_F_CREATE, BPF_SOCK_OPS_TCP_LISTEN_CB,
+        BPF_SK_STORAGE_GET_F_CREATE,
     },
     btf_maps::{Array, LruHashMap},
     helpers::{
         bpf_get_current_cgroup_id, bpf_get_current_pid_tgid, bpf_ktime_get_ns, bpf_sk_fullsock,
         bpf_sk_storage_get, generated::bpf_get_current_comm,
     },
-    macros::{btf_map, cgroup_skb, cgroup_sock, fentry, sock_ops},
-    programs::{FEntryContext, SkBuffContext, SockContext, SockOpsContext},
+    macros::{btf_map, cgroup_skb, cgroup_sock, fentry},
+    programs::{FEntryContext, SkBuffContext, SockContext},
 };
 use core::{
     ffi::c_void,
@@ -141,14 +141,14 @@ pub fn on_sock_create(ctx: SockContext) -> i32 {
     1
 }
 
-#[sock_ops]
-pub fn on_sockops(ctx: SockOpsContext) -> u32 {
-    if ctx.op() != BPF_SOCK_OPS_TCP_LISTEN_CB {
-        return 1;
-    }
-    let socket = unsafe { (*ctx.ops).__bindgen_anon_2.sk };
+// Trace listen in process context: Linux 6.8 sock_ops programs cannot call
+// get_current_pid_tgid/get_current_comm. Refresh before accepted sockets clone
+// listener storage, including when a child listens on an inherited socket.
+#[fentry(function = "inet_csk_listen_start")]
+pub fn on_socket_listen(ctx: FEntryContext) -> u32 {
+    let socket: *mut c_void = ctx.arg(0);
     if socket.is_null() {
-        return 1;
+        return 0;
     }
     let mut proc = MaybeUninit::<ProcInfo>::uninit();
     unsafe {
@@ -175,7 +175,7 @@ pub fn on_sockops(ctx: SockOpsContext) -> u32 {
         }
     }
     remember(unsafe { proc.assume_init_ref() });
-    1
+    0
 }
 
 #[fentry(function = "tcp_sendmsg")]

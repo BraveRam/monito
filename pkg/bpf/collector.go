@@ -62,7 +62,7 @@ type BPFCollector struct {
 	objs             MonitoObjects
 	cgroupFile       *os.File
 	sockCreateLink   link.Link
-	sockOpsLink      link.Link
+	listenLink       link.Link
 	recoveryLinks    []link.Link
 	recoveryPrograms []*ebpf.Program
 	previous         map[MonitoFlowKey]MonitoFlowMetrics
@@ -115,16 +115,14 @@ func NewBPFCollector(cgroupPath string) (*BPFCollector, error) {
 		col.sockCreateLink = l
 	}
 
-	// TCP_LISTEN_CB is a syscall-context ownership refresh, not a handshake
-	// PID sample. Treat attachment failure as fatal to avoid silent omissions.
-	sockOps, err := link.AttachCgroup(link.CgroupOptions{
-		Path: cgroupPath, Attach: ebpf.AttachCGroupSockOps, Program: col.objs.OnSockops,
-	})
+	// Refresh listener ownership before accepted sockets inherit its storage.
+	// fentry supports process helpers on Ubuntu's 6.8 GA kernel; sock_ops does not.
+	listener, err := link.AttachTracing(link.TracingOptions{Program: col.objs.OnSocketListen})
 	if err != nil {
 		col.Close()
-		return nil, fmt.Errorf("attach sockops: %w", err)
+		return nil, fmt.Errorf("attach listener ownership: %w", err)
 	}
-	col.sockOpsLink = sockOps
+	col.listenLink = listener
 
 	if err := col.attachRecovery(); err != nil {
 		col.Close()
@@ -276,7 +274,7 @@ func (c *BPFCollector) StopAccounting() error {
 	}
 	c.recoveryLinks = nil
 
-	for _, hook := range []*link.Link{&c.ingressLink, &c.egressLink, &c.sockOpsLink, &c.sockCreateLink} {
+	for _, hook := range []*link.Link{&c.ingressLink, &c.egressLink, &c.listenLink, &c.sockCreateLink} {
 		if *hook != nil {
 			if err := (*hook).Close(); err != nil {
 				errs = append(errs, err)
@@ -366,8 +364,8 @@ func (c *BPFCollector) Close() error {
 			errs = append(errs, err)
 		}
 	}
-	if c.sockOpsLink != nil {
-		if err := c.sockOpsLink.Close(); err != nil {
+	if c.listenLink != nil {
+		if err := c.listenLink.Close(); err != nil {
 			errs = append(errs, err)
 		}
 	}

@@ -1,3 +1,10 @@
+monito (1.1.1-1) noble; urgency=medium
+
+  * Fix listener ownership hooks on Ubuntu Linux 6.8.
+  * Test the packaged collector in a real Ubuntu GA kernel VM.
+
+ -- Monito contributors <BraveRam@users.noreply.github.com>  Sat, 17 Oct 2026 07:00:00 +0000
+
 monito (1.1.0-1) noble; urgency=medium
 
   * Add Ubuntu 24.04 amd64 packages and package lifecycle checks.

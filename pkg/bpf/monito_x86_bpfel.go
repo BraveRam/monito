@@ -76,11 +76,11 @@ type MonitoSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type MonitoProgramSpecs struct {
-	OnEgress     *ebpf.ProgramSpec `ebpf:"on_egress"`
-	OnIngress    *ebpf.ProgramSpec `ebpf:"on_ingress"`
-	OnSockCreate *ebpf.ProgramSpec `ebpf:"on_sock_create"`
-	OnSocketIo   *ebpf.ProgramSpec `ebpf:"on_socket_io"`
-	OnSockops    *ebpf.ProgramSpec `ebpf:"on_sockops"`
+	OnEgress       *ebpf.ProgramSpec `ebpf:"on_egress"`
+	OnIngress      *ebpf.ProgramSpec `ebpf:"on_ingress"`
+	OnSockCreate   *ebpf.ProgramSpec `ebpf:"on_sock_create"`
+	OnSocketIo     *ebpf.ProgramSpec `ebpf:"on_socket_io"`
+	OnSocketListen *ebpf.ProgramSpec `ebpf:"on_socket_listen"`
 }
 
 // MonitoMapSpecs contains maps before they are loaded into the kernel.
@@ -144,11 +144,11 @@ type MonitoVariables struct {
 //
 // It can be passed to LoadMonitoObjects or ebpf.CollectionSpec.LoadAndAssign.
 type MonitoPrograms struct {
-	OnEgress     *ebpf.Program `ebpf:"on_egress"`
-	OnIngress    *ebpf.Program `ebpf:"on_ingress"`
-	OnSockCreate *ebpf.Program `ebpf:"on_sock_create"`
-	OnSocketIo   *ebpf.Program `ebpf:"on_socket_io"`
-	OnSockops    *ebpf.Program `ebpf:"on_sockops"`
+	OnEgress       *ebpf.Program `ebpf:"on_egress"`
+	OnIngress      *ebpf.Program `ebpf:"on_ingress"`
+	OnSockCreate   *ebpf.Program `ebpf:"on_sock_create"`
+	OnSocketIo     *ebpf.Program `ebpf:"on_socket_io"`
+	OnSocketListen *ebpf.Program `ebpf:"on_socket_listen"`
 }
 
 func (p *MonitoPrograms) Close() error {
@@ -157,7 +157,7 @@ func (p *MonitoPrograms) Close() error {
 		p.OnIngress,
 		p.OnSockCreate,
 		p.OnSocketIo,
-		p.OnSockops,
+		p.OnSocketListen,
 	)
 }
 

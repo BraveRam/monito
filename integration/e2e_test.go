@@ -72,7 +72,15 @@ func startDaemon(t *testing.T, bin, db, socket string, mock bool) *daemonProcess
 		}
 	})
 	client := api.NewClient(socket)
-	deadline := time.Now().Add(10 * time.Second)
+	startupTimeout := 10 * time.Second
+	if value := os.Getenv("MONITO_E2E_START_TIMEOUT"); value != "" {
+		var err error
+		startupTimeout, err = time.ParseDuration(value)
+		if err != nil || startupTimeout <= 0 {
+			t.Fatalf("invalid MONITO_E2E_START_TIMEOUT: %q", value)
+		}
+	}
+	deadline := time.Now().Add(startupTimeout)
 	for time.Now().Before(deadline) {
 		if _, err := client.GetStatus(); err == nil {
 			return d
