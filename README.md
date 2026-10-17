@@ -31,7 +31,6 @@ To update, install the latest package again. For Ubuntu, download the new `.deb`
 To build from source (Go 1.26.2+ and GCC):
 
 ```bash
-sudo dnf install go gcc make git
 git clone https://github.com/BraveRam/monito.git
 cd monito
 sudo make install
@@ -102,16 +101,13 @@ sudo ./scripts/test-kernel.sh       # Live eBPF and service sandbox tests
 
 The Rust collector build and developer requirements are documented in [bpf/rust](bpf/rust/README.md). Normal builds and `go install` use the included bytecode and do not need Rust.
 
-Build RPMs with `make rpm` (`rpm-build`, `systemd-rpm-macros`) or DEBs on Ubuntu with `make deb` (`build-essential`, `debhelper`, `dpkg-dev`, `golang-any`). Outputs go to `dist/rpm/` and `dist/deb/`. Test extracted binaries with `scripts/test-rpm.sh path/to/package.rpm` or `scripts/test-deb.sh path/to/package.deb`.
+Build RPMs with `make rpm` (`rpm-build`, `systemd-rpm-macros`) or DEBs on Ubuntu with `make deb` (`build-essential`, `debhelper`, `dpkg-dev`, `golang-any`, `python3`). Outputs go to `dist/rpm/` and `dist/deb/`. Test extracted binaries with `scripts/test-rpm.sh path/to/package.rpm` or `scripts/test-deb.sh path/to/package.deb`.
 
 Version tags matching the RPM spec and Debian changelog run CI and publish both packages on GitHub Releases.
 
 ## Uninstall
 
-```bash
-sudo dnf remove monito             # Keeps usage history
-sudo apt remove monito             # Ubuntu; keeps usage history
-```
+Fedora: `sudo dnf remove monito`. Ubuntu: `sudo apt remove monito`. Both keep usage history.
 
 For a source installation:
 

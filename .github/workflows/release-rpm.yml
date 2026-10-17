@@ -78,7 +78,7 @@ jobs:
       - name: Install build tools
         run: |
           apt-get update
-          apt-get install -y build-essential ca-certificates debhelper dpkg-dev git golang-any util-linux
+          apt-get install -y build-essential ca-certificates debhelper dpkg-dev git golang-any python3 util-linux
           useradd --create-home --uid 1001 builder
 
       - uses: actions/checkout@v4
