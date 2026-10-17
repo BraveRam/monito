@@ -3,6 +3,7 @@
 /monito
 /monitod
 /prototype
+/dist/rpm/
 
 # SQLite databases
 *.db

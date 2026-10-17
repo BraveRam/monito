@@ -1,0 +1,87 @@
+name: Release RPM
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/release-rpm.yml'
+      - 'packaging/**'
+      - 'scripts/build-rpm.sh'
+      - 'scripts/test-rpm.sh'
+      - 'Makefile'
+      - 'cmd/**'
+      - 'pkg/**'
+      - 'integration/**'
+      - 'dist/systemd/**'
+      - 'go.mod'
+      - 'go.sum'
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - name: Install build tools
+        run: |
+          dnf install -y cpio gcc git golang make rpm-build shadow-utils systemd-rpm-macros tar gzip util-linux
+          useradd --create-home --uid 1001 builder
+
+      - uses: actions/checkout@v4
+
+      - name: Prepare regular-user build
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Check version tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          spec_version="$(rpmspec -q --srpm --qf '%{VERSION}' packaging/rpm/monito.spec)"
+          test "$version" = "$spec_version"
+
+      - name: Test
+        run: |
+          runuser -u builder -- go vet ./...
+          runuser -u builder -- go test -race ./...
+          runuser -u builder -- make e2e
+
+      - name: Build RPM
+        run: runuser -u builder -- make rpm
+
+      - name: Verify packaged binaries
+        run: runuser -u builder -- bash -c './scripts/test-rpm.sh dist/rpm/monito-*.rpm'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monito-rpm
+          path: dist/rpm/*.rpm
+          compression-level: 0
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: rpm
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: monito-rpm
+          path: dist/rpm
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rpm_file="$(find dist/rpm -maxdepth 1 -name 'monito-*.rpm' -print -quit)"
+          cp "$rpm_file" dist/rpm/monito.rpm
+          (cd dist/rpm && sha256sum *.rpm > SHA256SUMS)
+          gh release create "$GITHUB_REF_NAME" \
+            "$rpm_file" dist/rpm/monito.rpm dist/rpm/SHA256SUMS \
+            --repo "$GITHUB_REPOSITORY" \
+            --generate-notes

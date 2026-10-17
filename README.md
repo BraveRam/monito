@@ -4,9 +4,19 @@ A Linux network monitor with a Rust eBPF collector and a Go dashboard. It shows 
 
 ## Install
 
-Requires Linux with cgroup v2 and eBPF support, Go 1.26.2+, and GCC. Developed and tested on Fedora.
+The RPM release targets Fedora 44 on x86_64. It installs the dashboard, background collector, and systemd service. Linux cgroup v2, eBPF, and kernel BTF support are required.
 
-The recommended setup installs a background systemd collector and the dashboard:
+```bash
+sudo dnf install https://github.com/BraveRam/monito/releases/latest/download/monito.rpm
+sudo systemctl enable --now monito
+monito
+```
+
+Run `monito` as your regular user. Only installation and the collector service need root.
+
+To update, rerun the RPM install command. If switching from a source installation, run `sudo make uninstall` in the old checkout first; this keeps your history.
+
+If no RPM release is available yet, install from source:
 
 ```bash
 sudo dnf install go gcc make git
@@ -17,8 +27,6 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now monito
 monito
 ```
-
-Run `monito` as your regular user. Only installation and the collector service need root.
 
 To update after pulling changes:
 
@@ -31,7 +39,7 @@ sudo systemctl restart monito
 
 ### Optional: binaries with Go
 
-If you only need the binaries:
+If you only need the binaries and will start the collector yourself:
 
 ```bash
 go install github.com/BraveRam/monito/cmd/monito@latest
@@ -80,7 +88,15 @@ sudo ./scripts/test-kernel.sh       # Live eBPF and service sandbox tests
 
 The Rust collector build and developer requirements are documented in [bpf/rust](bpf/rust/README.md). Normal builds and `go install` use the included bytecode and do not need Rust.
 
+Build a local RPM with `make rpm` after installing `rpm-build` and `systemd-rpm-macros`. Packages appear in `dist/rpm/`; verify one with `./scripts/test-rpm.sh dist/rpm/monito-*.rpm` (`cpio` required). Pushing a version tag matching `packaging/rpm/monito.spec` (for example, `v1.0.0`) tests, builds, and publishes the RPM on GitHub Releases.
+
 ## Uninstall
+
+```bash
+sudo dnf remove monito             # Keeps usage history
+```
+
+For a source installation:
 
 ```bash
 sudo make uninstall                # Keeps usage history
