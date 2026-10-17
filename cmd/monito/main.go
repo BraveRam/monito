@@ -19,7 +19,7 @@ import (
 	"github.com/BraveRam/monito/pkg/util"
 )
 
-var version = "1.1.1"
+var version = "1.1.2"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -316,6 +316,8 @@ func runStatus(socketPath string, asJSON bool) {
 	fmt.Printf("Active Applications:   %d\n", status.ActiveAppCount)
 	fmt.Printf("Recovered Existing Sockets: %d\n", status.RecoveredSockets)
 	fmt.Printf("Ownership Recovery Errors: %d\n", status.RecoveryErrors)
+	fmt.Printf("Other Namespace Packets Excluded: %d\n", status.ExcludedNamespacePackets)
+	fmt.Printf("Namespace Read Errors: %d\n", status.NamespaceReadErrors)
 	fmt.Println("\nKernel eBPF Metrics:")
 	fmt.Printf("  • Total Ingress:     %s packets\n", strconv.FormatUint(status.TotalIngressPackets, 10))
 	fmt.Printf("  • Total Egress:      %s packets\n", strconv.FormatUint(status.TotalEgressPackets, 10))

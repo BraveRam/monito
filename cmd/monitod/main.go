@@ -26,7 +26,7 @@ type flowCollector interface {
 	ReadCounters() bpf.DiagnosticCounters
 }
 
-var version = "1.1.1"
+var version = "1.1.2"
 
 type collectorDaemon struct {
 	mu             sync.RWMutex
@@ -71,6 +71,8 @@ func (d *collectorDaemon) GetCollectorStatus() api.CollectorStatus {
 		status.MapErrors = diag.MapErrors
 		status.RecoveredSockets = diag.RecoveredSockets
 		status.RecoveryErrors = diag.RecoveryErrors
+		status.ExcludedNamespacePackets = diag.ExcludedNamespacePackets
+		status.NamespaceReadErrors = diag.NamespaceReadErrors
 	}
 	return status
 }
@@ -94,8 +96,14 @@ func (d *collectorDaemon) GetDoctorReport() api.DoctorReport {
 	if !report.BTFAvailable {
 		report.Warnings = append(report.Warnings, "BTF (/sys/kernel/btf/vmlinux) not found")
 	}
-	if d.bpfCollector != nil && d.bpfCollector.ReadCounters().RecoveryErrors > 0 {
-		report.Warnings = append(report.Warnings, "Some existing socket ownership records could not be allocated; see collector status")
+	if d.bpfCollector != nil {
+		counters := d.bpfCollector.ReadCounters()
+		if counters.RecoveryErrors > 0 {
+			report.Warnings = append(report.Warnings, "Some existing socket ownership records could not be allocated; see collector status")
+		}
+		if counters.NamespaceReadErrors > 0 {
+			report.Warnings = append(report.Warnings, "Some packets could not be assigned to a network namespace and were excluded; see collector status")
+		}
 	}
 	if d.mockMode {
 		report.Warnings = append(report.Warnings, "Collector running in MOCK / PREVIEW mode without eBPF capabilities")

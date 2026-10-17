@@ -148,6 +148,9 @@ func (m Model) renderCoverage() string {
 		if status.RecoveryErrors > 0 {
 			text += " (recovery failures; see monito doctor)"
 		}
+		if status.NamespaceReadErrors > 0 {
+			text += " (namespace read failures; see monito doctor)"
+		}
 	}
 	return lipgloss.NewStyle().Width(m.width).Foreground(mutedColor).Render(text)
 }

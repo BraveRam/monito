@@ -82,6 +82,7 @@ jobs:
           assert s["total_ingress_packets"] + s["total_egress_packets"] > 0, s
           assert s["map_errors"] == 0, s
           assert s["recovery_errors"] == 0, s
+          assert s["namespace_read_errors"] == 0, s
           print(s)
           '
           sudo systemctl restart monito

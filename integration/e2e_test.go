@@ -394,6 +394,10 @@ func kernelEndToEnd(t *testing.T, preexisting bool) {
 			}
 		}
 	}
+	status, err := client.GetStatus()
+	if err != nil || status.NamespaceReadErrors != 0 {
+		t.Fatalf("namespace accounting: %+v %v", status, err)
+	}
 	if preexisting {
 		status, err := client.GetStatus()
 		if err != nil || status.RecoveredSockets < 8 || status.RecoveryErrors != 0 {

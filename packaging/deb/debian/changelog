@@ -1,3 +1,12 @@
+monito (1.1.2-1) noble; urgency=medium
+
+  * Scope packet accounting to the collector network namespace.
+  * Avoid counting rootless container traffic both inside the container
+    and at its host network helper.
+  * Report excluded namespace packets and namespace read errors.
+
+ -- Monito contributors <BraveRam@users.noreply.github.com>  Sat, 17 Oct 2026 07:30:00 +0000
+
 monito (1.1.1-1) noble; urgency=medium
 
   * Fix listener ownership hooks on Ubuntu Linux 6.8.

@@ -39,6 +39,10 @@ func TestKernelConcurrentSnapshots(t *testing.T) {
 	if err := LoadMonitoObjects(&objs, nil); err != nil {
 		t.Fatalf("load programs: %+v", err)
 	}
+	// BPF_PROG_TEST_RUN supplies no socket; disable only this test's boundary.
+	if err := objs.AccountingScope.Update(uint32(0), NamespaceScope{}, 0); err != nil {
+		t.Fatal(err)
+	}
 	c := &BPFCollector{objs: objs, previous: make(map[MonitoFlowKey]MonitoFlowMetrics)}
 	defer c.Close()
 	// Ethernet + a minimal IPv4/UDP packet. Program.Test injects a synthetic

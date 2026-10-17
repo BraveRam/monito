@@ -46,14 +46,16 @@ type FlowDelta struct {
 
 // DiagnosticCounters represents kernel BPF health and capacity metrics
 type DiagnosticCounters struct {
-	TotalIngressPackets uint64
-	TotalEgressPackets  uint64
-	SocketsRegistered   uint64
-	UnattributedIngress uint64
-	UnattributedEgress  uint64
-	MapErrors           uint64
-	RecoveredSockets    uint64
-	RecoveryErrors      uint64
+	TotalIngressPackets      uint64
+	TotalEgressPackets       uint64
+	SocketsRegistered        uint64
+	UnattributedIngress      uint64
+	UnattributedEgress       uint64
+	MapErrors                uint64
+	RecoveredSockets         uint64
+	RecoveryErrors           uint64
+	ExcludedNamespacePackets uint64
+	NamespaceReadErrors      uint64
 }
 
 // BPFCollector manages the eBPF programs, maps, and links
@@ -331,6 +333,11 @@ func (c *BPFCollector) ReadCounters() DiagnosticCounters {
 	_ = c.objs.Counters.Lookup(&idx, &diag.RecoveredSockets)
 	idx = 7
 	_ = c.objs.Counters.Lookup(&idx, &diag.RecoveryErrors)
+
+	idx = 8
+	_ = c.objs.Counters.Lookup(&idx, &diag.ExcludedNamespacePackets)
+	idx = 9
+	_ = c.objs.Counters.Lookup(&idx, &diag.NamespaceReadErrors)
 
 	return diag
 }

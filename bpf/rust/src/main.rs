@@ -11,8 +11,9 @@ use aya_ebpf::{
     },
     btf_maps::{Array, LruHashMap},
     helpers::{
-        bpf_get_current_cgroup_id, bpf_get_current_pid_tgid, bpf_ktime_get_ns, bpf_sk_fullsock,
-        bpf_sk_storage_get, generated::bpf_get_current_comm,
+        bpf_get_current_cgroup_id, bpf_get_current_pid_tgid, bpf_ktime_get_ns,
+        bpf_probe_read_kernel, bpf_sk_fullsock, bpf_sk_storage_get,
+        generated::bpf_get_current_comm,
     },
     macros::{btf_map, cgroup_skb, cgroup_sock, fentry},
     programs::{FEntryContext, SkBuffContext, SockContext},
@@ -57,7 +58,74 @@ static pid_metadata: LruHashMap<u32, ProcInfo, 16384> = LruHashMap::new();
 #[btf_map]
 static flow_stats: LruHashMap<FlowKey, FlowMetrics, 16384> = LruHashMap::new();
 #[btf_map]
-static counters: Array<u64, 8> = Array::new();
+static counters: Array<u64, 10> = Array::new();
+
+#[repr(C)]
+struct NamespaceScope {
+    socket_net_offset: u32,
+    net_inum_offset: u32,
+    inum: u32,
+    pad: u32,
+}
+
+#[btf_map]
+static accounting_scope: Array<NamespaceScope, 1> = Array::new();
+
+#[inline(always)]
+unsafe fn in_accounting_namespace(skb: *mut __sk_buff) -> bool {
+    let Some(scope) = accounting_scope.get(0) else {
+        bump(9);
+        return false;
+    };
+    // Only synthetic, socketless BPF_PROG_TEST_RUN accounting tests disable
+    // the boundary. The production loader always supplies a nonzero inode.
+    if scope.inum == 0 {
+        return true;
+    }
+    let socket = unsafe { (*skb).__bindgen_anon_2.sk };
+    if socket.is_null() {
+        bump(9);
+        return false;
+    }
+    // get_netns_cookie is not available to cgroup_skb on Linux 6.8. Read
+    // the socket's own namespace using offsets validated against live BTF.
+    // Never use the current task: packet processing can run in softirq context.
+    // sock_common verifier pointers forbid pointer arithmetic. Read the raw
+    // address from a stack slot before applying the live-BTF offset; both
+    // kernel dereferences remain fault-safe probe reads.
+    let socket_address = socket as usize;
+    let Ok(socket_address) = (unsafe { bpf_probe_read_kernel(&socket_address) }) else {
+        bump(9);
+        return false;
+    };
+    let net = unsafe {
+        bpf_probe_read_kernel((socket_address + scope.socket_net_offset as usize) as *const usize)
+    };
+    let Ok(net) = net else {
+        bump(9);
+        return false;
+    };
+    if net == 0 {
+        bump(9);
+        return false;
+    }
+    let inum = unsafe {
+        bpf_probe_read_kernel(
+            (net as *const u8)
+                .add(scope.net_inum_offset as usize)
+                .cast::<u32>(),
+        )
+    };
+    let Ok(inum) = inum else {
+        bump(9);
+        return false;
+    };
+    if inum != scope.inum {
+        bump(8);
+        return false;
+    }
+    true
+}
 
 #[inline(always)]
 unsafe fn add(value: *mut u64, delta: u64) {
@@ -297,6 +365,9 @@ struct AlignedKey(MaybeUninit<FlowKey>);
 
 #[inline(always)]
 fn packet(ctx: SkBuffContext, ingress: bool) -> i32 {
+    if !unsafe { in_accounting_namespace(ctx.skb.skb) } {
+        return 1;
+    }
     // Packet hooks only consult socket-local ownership; the current task may
     // be unrelated softirq context and must never be used as the packet owner.
     let pid = unsafe { socket_pid(ctx.skb.skb, if ingress { 3 } else { 4 }) };

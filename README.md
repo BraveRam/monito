@@ -86,7 +86,11 @@ Dashboard keys: `↑/↓` select, `Enter` details, `←/→` change day, `T` tod
 
 Sizes and rates use decimal units: 1 KB = 1,000 bytes and 1 GB = 1,000,000,000 bytes.
 
+Accounting covers sockets in the collector’s network namespace (normally the host). Rootless container traffic is counted once under its host network helper, such as `pasta`, rather than also counting the inner container socket. Traffic confined to other network namespaces, including rootful bridged containers, is outside this scope.
+
 Usage includes IP headers and retransmissions. Loopback traffic counts at both sending and receiving apps. VPNs, proxies, and network offloads can make totals differ from interface counters or ISP bills.
+
+The namespace boundary applies to new measurements; upgrades preserve earlier totals, including any historical duplicate counting.
 
 History starts when collection starts and is stored at `/var/lib/monito/monito.db`. All local users can read system-wide usage through the collector.
 

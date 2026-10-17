@@ -23,10 +23,11 @@ func TestEmbeddedCollectorABI(t *testing.T) {
 		kind                        ebpf.MapType
 		key, value, capacity, flags uint32
 	}{
-		"sock_owners":  {ebpf.SkStorage, 4, 32, 0, 0x201},
-		"pid_metadata": {ebpf.LRUHash, 4, 32, 16384, 0},
-		"flow_stats":   {ebpf.LRUHash, 8, 40, 16384, 0},
-		"counters":     {ebpf.Array, 4, 8, 8, 0},
+		"sock_owners":      {ebpf.SkStorage, 4, 32, 0, 0x201},
+		"pid_metadata":     {ebpf.LRUHash, 4, 32, 16384, 0},
+		"flow_stats":       {ebpf.LRUHash, 8, 40, 16384, 0},
+		"counters":         {ebpf.Array, 4, 8, 10, 0},
+		"accounting_scope": {ebpf.Array, 4, 16, 1, 0},
 	} {
 		m := spec.Maps[name]
 		if m == nil {

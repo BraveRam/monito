@@ -52,19 +52,21 @@ type AppUsageResponse struct {
 
 // CollectorStatus represents daemon health, diagnostics, and capacity
 type CollectorStatus struct {
-	RecoveredSockets    uint64    `json:"recovered_sockets"`
-	RecoveryErrors      uint64    `json:"recovery_errors"`
-	UptimeSeconds       int64     `json:"uptime_seconds"`
-	StartTime           time.Time `json:"start_time"`
-	LastFlushTime       time.Time `json:"last_flush_time"`
-	TotalIngressPackets uint64    `json:"total_ingress_packets"`
-	TotalEgressPackets  uint64    `json:"total_egress_packets"`
-	SocketsRegistered   uint64    `json:"sockets_registered"`
-	UnattributedIngress uint64    `json:"unattributed_ingress"`
-	UnattributedEgress  uint64    `json:"unattributed_egress"`
-	MapErrors           uint64    `json:"map_errors"`
-	ActiveAppCount      int       `json:"active_app_count"`
-	Version             string    `json:"version"`
+	ExcludedNamespacePackets uint64    `json:"excluded_namespace_packets"`
+	NamespaceReadErrors      uint64    `json:"namespace_read_errors"`
+	RecoveredSockets         uint64    `json:"recovered_sockets"`
+	RecoveryErrors           uint64    `json:"recovery_errors"`
+	UptimeSeconds            int64     `json:"uptime_seconds"`
+	StartTime                time.Time `json:"start_time"`
+	LastFlushTime            time.Time `json:"last_flush_time"`
+	TotalIngressPackets      uint64    `json:"total_ingress_packets"`
+	TotalEgressPackets       uint64    `json:"total_egress_packets"`
+	SocketsRegistered        uint64    `json:"sockets_registered"`
+	UnattributedIngress      uint64    `json:"unattributed_ingress"`
+	UnattributedEgress       uint64    `json:"unattributed_egress"`
+	MapErrors                uint64    `json:"map_errors"`
+	ActiveAppCount           int       `json:"active_app_count"`
+	Version                  string    `json:"version"`
 }
 
 // DoctorReport contains diagnostic system checks

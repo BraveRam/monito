@@ -60,6 +60,11 @@ func LoadMonitoObjects(obj interface{}, opts *ebpf.CollectionOptions) error {
 		return err
 	}
 
+	scope, err := namespaceScope()
+	if err != nil {
+		return fmt.Errorf("configure accounting namespace: %w", err)
+	}
+	spec.Maps["accounting_scope"].Contents = []ebpf.MapKV{{Key: uint32(0), Value: scope}}
 	return spec.LoadAndAssign(obj, opts)
 }
 
@@ -87,10 +92,11 @@ type MonitoProgramSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type MonitoMapSpecs struct {
-	Counters    *ebpf.MapSpec `ebpf:"counters"`
-	FlowStats   *ebpf.MapSpec `ebpf:"flow_stats"`
-	PidMetadata *ebpf.MapSpec `ebpf:"pid_metadata"`
-	SockOwners  *ebpf.MapSpec `ebpf:"sock_owners"`
+	AccountingScope *ebpf.MapSpec `ebpf:"accounting_scope"`
+	Counters        *ebpf.MapSpec `ebpf:"counters"`
+	FlowStats       *ebpf.MapSpec `ebpf:"flow_stats"`
+	PidMetadata     *ebpf.MapSpec `ebpf:"pid_metadata"`
+	SockOwners      *ebpf.MapSpec `ebpf:"sock_owners"`
 }
 
 // MonitoVariableSpecs contains global variables before they are loaded into the kernel.
@@ -119,14 +125,16 @@ func (o *MonitoObjects) Close() error {
 //
 // It can be passed to LoadMonitoObjects or ebpf.CollectionSpec.LoadAndAssign.
 type MonitoMaps struct {
-	Counters    *ebpf.Map `ebpf:"counters"`
-	FlowStats   *ebpf.Map `ebpf:"flow_stats"`
-	PidMetadata *ebpf.Map `ebpf:"pid_metadata"`
-	SockOwners  *ebpf.Map `ebpf:"sock_owners"`
+	AccountingScope *ebpf.Map `ebpf:"accounting_scope"`
+	Counters        *ebpf.Map `ebpf:"counters"`
+	FlowStats       *ebpf.Map `ebpf:"flow_stats"`
+	PidMetadata     *ebpf.Map `ebpf:"pid_metadata"`
+	SockOwners      *ebpf.Map `ebpf:"sock_owners"`
 }
 
 func (m *MonitoMaps) Close() error {
 	return _MonitoClose(
+		m.AccountingScope,
 		m.Counters,
 		m.FlowStats,
 		m.PidMetadata,
