@@ -30,7 +30,7 @@ mkdir -p /sys/fs/cgroup
 mount -t cgroup2 cgroup2 /sys/fs/cgroup
 ip link set lo up
 uname -r
-export MONITO_EBPF_E2E=1 MONITO_BIN_DIR=/bin MONITO_E2E_START_TIMEOUT=60s
+export MONITO_EBPF_E2E=1 MONITO_BIN_DIR=/bin MONITO_E2E_TIMEOUT=60s
 if /bin/bpf.test -test.run '^TestKernel' -test.v -test.timeout 90s &&
    /bin/e2e.test -test.run '^TestKernel' -test.v -test.timeout 180s; then
     echo MONITO_KERNEL_VM_PASS

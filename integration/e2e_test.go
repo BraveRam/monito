@@ -47,6 +47,19 @@ type daemonProcess struct {
 	done bool
 }
 
+// Software-emulated kernel VMs need longer deadlines than native runners.
+func e2eTimeout(t *testing.T) time.Duration {
+	t.Helper()
+	if value := os.Getenv("MONITO_E2E_TIMEOUT"); value != "" {
+		timeout, err := time.ParseDuration(value)
+		if err != nil || timeout <= 0 {
+			t.Fatalf("invalid MONITO_E2E_TIMEOUT: %q", value)
+		}
+		return timeout
+	}
+	return 10 * time.Second
+}
+
 func startDaemon(t *testing.T, bin, db, socket string, mock bool) *daemonProcess {
 	t.Helper()
 	args := []string{"--db=" + db, "--socket=" + socket, "--flush-interval=30"}
@@ -72,15 +85,7 @@ func startDaemon(t *testing.T, bin, db, socket string, mock bool) *daemonProcess
 		}
 	})
 	client := api.NewClient(socket)
-	startupTimeout := 10 * time.Second
-	if value := os.Getenv("MONITO_E2E_START_TIMEOUT"); value != "" {
-		var err error
-		startupTimeout, err = time.ParseDuration(value)
-		if err != nil || startupTimeout <= 0 {
-			t.Fatalf("invalid MONITO_E2E_START_TIMEOUT: %q", value)
-		}
-	}
-	deadline := time.Now().Add(startupTimeout)
+	deadline := time.Now().Add(e2eTimeout(t))
 	for time.Now().Before(deadline) {
 		if _, err := client.GetStatus(); err == nil {
 			return d
@@ -109,7 +114,7 @@ func (d *daemonProcess) stop(t *testing.T) {
 }
 func cli(t *testing.T, bin, socket string, args ...string) []byte {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), e2eTimeout(t))
 	defer cancel()
 	args = append(args, "--socket="+socket, "--json")
 	cmd := exec.CommandContext(ctx, filepath.Join(bin, "monito"), args...)
@@ -219,7 +224,7 @@ func TestWorkload(t *testing.T) {
 			go func() {
 				defer c.Close()
 				for {
-					c.SetDeadline(time.Now().Add(10 * time.Second))
+					c.SetDeadline(time.Now().Add(e2eTimeout(t)))
 					if _, err := io.CopyN(io.Discard, c, transferBytes); err != nil {
 						return
 					}
@@ -258,7 +263,7 @@ func TestWorkload(t *testing.T) {
 					c = dial()
 					defer c.Close()
 				}
-				c.SetDeadline(time.Now().Add(10 * time.Second))
+				c.SetDeadline(time.Now().Add(e2eTimeout(t)))
 				if _, err := io.CopyN(c, zeroReader{}, transferBytes); err != nil {
 					panic(err)
 				}
