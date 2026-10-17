@@ -16,7 +16,7 @@ Run `monito` as your regular user. Only installation and the collector service n
 
 To update, rerun the RPM install command. If switching from a source installation, run `sudo make uninstall` in the old checkout first; this keeps your history.
 
-If no RPM release is available yet, install from source:
+To build from source (Go 1.26.2+ and GCC):
 
 ```bash
 sudo dnf install go gcc make git

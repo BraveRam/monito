@@ -1,6 +1,7 @@
 name: Release RPM
 
 on:
+  workflow_dispatch:
   pull_request:
     paths:
       - '.github/workflows/release-rpm.yml'
@@ -15,6 +16,7 @@ on:
       - 'go.mod'
       - 'go.sum'
   push:
+    branches: [main]
     tags:
       - 'v*'
 
@@ -22,6 +24,10 @@ permissions:
   contents: read
 
 jobs:
+  checks:
+    if: startsWith(github.ref, 'refs/tags/v')
+    uses: ./.github/workflows/ci.yml
+
   rpm:
     runs-on: ubuntu-latest
     container: fedora:44
@@ -64,7 +70,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: rpm
+    needs: [checks, rpm]
     runs-on: ubuntu-latest
     permissions:
       contents: write
