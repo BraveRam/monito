@@ -2,8 +2,8 @@
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-version="${VERSION:-1.0.0}"
 spec_version="$(rpmspec -q --srpm --qf '%{VERSION}' "$repo_root/packaging/rpm/monito.spec")"
+version="${VERSION:-$spec_version}"
 if [[ "$version" != "$spec_version" ]]; then
     printf 'Version %s does not match RPM spec version %s\n' "$version" "$spec_version" >&2
     exit 1

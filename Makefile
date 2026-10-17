@@ -1,7 +1,7 @@
 GO ?= go
 CARGO ?= cargo
 BPF_CARGO ?= cargo +nightly-2026-10-16
-VERSION ?= 1.0.0
+VERSION ?= 1.0.1
 GO_LDFLAGS ?= -s -w
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin

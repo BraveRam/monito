@@ -26,7 +26,7 @@ type flowCollector interface {
 	ReadCounters() bpf.DiagnosticCounters
 }
 
-var version = "1.0.0"
+var version = "1.0.1"
 
 type collectorDaemon struct {
 	mu             sync.RWMutex
