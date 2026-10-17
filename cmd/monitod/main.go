@@ -26,6 +26,8 @@ type flowCollector interface {
 	ReadCounters() bpf.DiagnosticCounters
 }
 
+var version = "1.0.0"
+
 type collectorDaemon struct {
 	mu             sync.RWMutex
 	store          *storage.Storage
@@ -56,7 +58,7 @@ func (d *collectorDaemon) GetCollectorStatus() api.CollectorStatus {
 		StartTime:      d.startTime,
 		LastFlushTime:  d.lastFlushTime,
 		ActiveAppCount: d.activeApps,
-		Version:        "1.0.0",
+		Version:        version,
 	}
 
 	if d.bpfCollector != nil {

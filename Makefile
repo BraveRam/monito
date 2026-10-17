@@ -1,6 +1,8 @@
 GO ?= go
 CARGO ?= cargo
 BPF_CARGO ?= cargo +nightly-2026-10-16
+VERSION ?= 1.0.0
+GO_LDFLAGS ?= -s -w
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 SYSTEMD_DIR ?= /etc/systemd/system
@@ -21,9 +23,9 @@ generate:
 build:
 	@echo "Building Monito binaries..."
 	mkdir -p bin
-	$(GO) build -trimpath -ldflags="-s -w" -o bin/monito ./cmd/monito
-	$(GO) build -trimpath -ldflags="-s -w" -o bin/monitod ./cmd/monitod
-	$(GO) build -trimpath -ldflags="-s -w" -o bin/prototype ./cmd/prototype
+	$(GO) build -trimpath -ldflags="$(GO_LDFLAGS) -X main.version=$(VERSION)" -o bin/monito ./cmd/monito
+	$(GO) build -trimpath -ldflags="$(GO_LDFLAGS) -X main.version=$(VERSION)" -o bin/monitod ./cmd/monitod
+	$(GO) build -trimpath -ldflags="$(GO_LDFLAGS)" -o bin/prototype ./cmd/prototype
 	@cp bin/monito monito
 	@cp bin/monitod monitod
 	@cp bin/prototype prototype
@@ -84,3 +86,7 @@ e2e: build
 kernel-test-binaries: build
 	$(GO) test -c -o bin/bpf.test ./pkg/bpf
 	$(GO) test -c -o bin/e2e.test ./integration
+
+.PHONY: rpm
+rpm:
+	VERSION=$(VERSION) ./scripts/build-rpm.sh

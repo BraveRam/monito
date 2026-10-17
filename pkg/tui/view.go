@@ -198,18 +198,18 @@ func (m Model) renderTable() string {
 		}
 		return style.Render(ansi.Truncate(value, width, "…"))
 	}
-	formatRow := func(app, kind, down, up, total, rate string) string {
+	formatRow := func(app, kind, total, down, up, rate string) string {
 		cells := []string{cell(app, colApp, false)}
 		if showType {
 			cells = append(cells, cell(kind, typeWidth, false))
 		}
-		for _, value := range []string{down, up, total, rate} {
+		for _, value := range []string{total, down, up, rate} {
 			cells = append(cells, cell(value, numberWidth, true))
 		}
 		return strings.Join(cells, " ")
 	}
 	headerLine := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#FFFFFF")).Background(lipgloss.Color("#2E2E3E")).Render(
-		"  " + formatRow("APPLICATION", "APP TYPE", "DOWNLOAD", "UPLOAD", "TOTAL", "RATE"))
+		"  " + formatRow("APPLICATION", "APP TYPE", "TOTAL", "DOWNLOAD", "UPLOAD", "RATE"))
 
 	var rows []string
 	rows = append(rows, headerLine)
@@ -259,7 +259,7 @@ func (m Model) renderTable() string {
 				rateStr = util.FormatRate(app.RateIn + app.RateOut)
 			}
 
-			rowStr := formatRow(appName, app.Identity.Category, util.FormatBytes(app.BytesIn), util.FormatBytes(app.BytesOut), util.FormatBytes(app.TotalBytes), rateStr)
+			rowStr := formatRow(appName, app.Identity.Category, util.FormatBytes(app.TotalBytes), util.FormatBytes(app.BytesIn), util.FormatBytes(app.BytesOut), rateStr)
 
 			if isSel {
 				rowStr = lipgloss.NewStyle().
@@ -336,15 +336,15 @@ func (m Model) renderDetailModal() string {
 	if len(m.detailHistory) == 0 {
 		histLines = append(histLines, "  (Loading history or no previous days recorded)")
 	} else {
-		histLines = append(histLines, "  Date        | Inflow       | Outflow      | Total")
+		histLines = append(histLines, "  Date        | Total        | Download     | Upload")
 		histLines = append(histLines, "  ------------+--------------+--------------+-------------")
 		for _, pt := range m.detailHistory {
 			histLines = append(histLines, fmt.Sprintf(
 				"  %-11s | %-12s | %-12s | %s",
 				pt.Date,
+				util.FormatBytes(pt.TotalBytes),
 				util.FormatBytes(pt.BytesIn),
 				util.FormatBytes(pt.BytesOut),
-				util.FormatBytes(pt.TotalBytes),
 			))
 		}
 	}
