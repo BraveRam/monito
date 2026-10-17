@@ -185,9 +185,6 @@ func (m Model) renderTable() string {
 		gaps = 5
 	}
 	colApp := m.width - 2 - gaps - typeWidth - 4*numberWidth
-	if colApp > 32 {
-		colApp = 32
-	}
 	if colApp < 12 {
 		colApp = 12
 	}

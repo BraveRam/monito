@@ -191,8 +191,13 @@ func TestDashboardLabelsCoverageAndWidths(t *testing.T) {
 	for i := 0; i < 30; i++ {
 		m.apps = append(m.apps, api.AppUsageResponse{Identity: &identity.AppIdentity{AppKey: "exec:/usr/bin/curl", DisplayName: "Very long 🌐 application 世界 name", Category: "cli_tool"}})
 	}
-	for _, width := range []int{80, 120, 140} {
+	for _, width := range []int{80, 120, 140, 200} {
 		m.width, m.height = width, 35
+		for _, line := range strings.Split(m.renderTable(), "\n") {
+			if got := lipgloss.Width(line); got != width {
+				t.Errorf("table width %d: got %d", width, got)
+			}
+		}
 		view := m.View()
 		for _, label := range []string{"Recorded: 4 apps", "Transferring: 1 apps", "Loopback: 20.0%", "Unknown:  10.0%", "App attribution: 40.0%", "Existing sockets recovered: 9"} {
 			if !strings.Contains(view, label) {
