@@ -9,7 +9,7 @@ Homepage: https://github.com/BraveRam/monito
 
 Package: monito
 Architecture: amd64
-Depends: ${shlibs:Depends}, ${misc:Depends}, systemd
+Depends: ${shlibs:Depends}, ${misc:Depends}, init-system-helpers (>= 1.54~), systemd
 Description: per-application Linux network traffic monitor
  Monito records network usage by application and provides a terminal dashboard
  for daily totals and live transfer rates. Includes the privileged collector

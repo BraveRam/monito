@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+# Ubuntu 24.04's debhelper omits this when --no-start is combined with
+# --restart-after-upgrade. Stop on removal, while preserving upgrade uptime.
+if [ "$1" = remove ] && [ -z "${DPKG_ROOT:-}" ] && [ -d /run/systemd/system ]; then
+    deb-systemd-invoke stop monito.service >/dev/null || true
+fi
+#DEBHELPER#

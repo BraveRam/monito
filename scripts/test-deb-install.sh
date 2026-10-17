@@ -20,6 +20,7 @@ sed -i "s/^Version:.*/Version: ${version%-*}~ci-1/" "$work/previous/DEBIAN/contr
 dpkg-deb --build --root-owner-group "$work/previous" "$work/previous.deb"
 apt-get install -y "$work/previous.deb"
 test ! -L /etc/systemd/system/multi-user.target.wants/monito.service
+systemctl enable monito
 mkdir -p /var/lib/monito
 printf 'preserve usage history\n' > /var/lib/monito/monito.db
 
@@ -27,6 +28,7 @@ apt-get install -y "$deb_file"
 test "$(dpkg-query -W -f='${Version}' monito)" = "$version"
 test "$(monito version)" = "monito version ${version%-*} (Linux/x86_64 eBPF)"
 dpkg --verify monito
+test -L /etc/systemd/system/multi-user.target.wants/monito.service
 systemd-analyze verify /usr/lib/systemd/system/monito.service
 test ! -e /usr/share/applications/monito.desktop
 grep -q 'preserve usage history' /var/lib/monito/monito.db
@@ -37,5 +39,6 @@ test ! -e /usr/bin/monitod
 test ! -e /usr/lib/systemd/system/monito.service
 grep -q 'preserve usage history' /var/lib/monito/monito.db
 dpkg --purge monito
+test ! -L /etc/systemd/system/multi-user.target.wants/monito.service
 grep -q 'preserve usage history' /var/lib/monito/monito.db
 printf 'Ubuntu install, upgrade, removal, and history preservation checks passed.\n'

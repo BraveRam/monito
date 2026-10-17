@@ -36,7 +36,12 @@ jobs:
           monito status --json
 
       - name: Test live eBPF and the service sandbox
-        run: sudo env MONITO_BIN_DIR=/usr/bin MONITO_SERVICE_BINARY=/usr/bin/monitod ./scripts/test-kernel.sh
+        run: |
+          # Test apps must be outside the runner agent's system service cgroup,
+          # which intentionally groups descendants into one service identity.
+          sudo systemd-run --scope --slice=user.slice --unit=monito-kernel-ci \
+            env MONITO_BIN_DIR=/usr/bin MONITO_SERVICE_BINARY=/usr/bin/monitod \
+            SUDO_UID="$(id -u)" SUDO_GID="$(id -g)" ./scripts/test-kernel.sh
 
       - name: Verify the installed service captured traffic
         run: |
@@ -50,6 +55,18 @@ jobs:
           '
           sudo systemctl restart monito
           monito status --json
+
+      - name: Test removal stops the running collector and keeps history
+        run: |
+          sudo test -s /var/lib/monito/monito.db
+          sudo apt-get remove -y monito
+          if systemctl is-active --quiet monito; then
+            echo 'Collector is still running after removal' >&2
+            exit 1
+          fi
+          sudo test -s /var/lib/monito/monito.db
+          sudo apt-get purge -y monito
+          sudo test -s /var/lib/monito/monito.db
 
       - name: Collector logs
         if: failure()
