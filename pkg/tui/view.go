@@ -112,16 +112,9 @@ func (m Model) renderCards() string {
 		util.FormatBytes(summary.TotalBytesIn), util.FormatBytes(summary.TotalBytesOut), summary.RecordedAppCount)
 	speed := fmt.Sprintf("%s %s\nInflow:  %s\nOutflow: %s\nTransferring: %d apps", headerLabel.Render("Current:"),
 		headerValue.Render(util.FormatRate(live.TotalRate)), util.FormatRate(live.TotalRateIn), util.FormatRate(live.TotalRateOut), transferring)
-	pct := func(bytes int64) float64 {
-		if summary.TotalBytes == 0 {
-			return 0
-		}
-		return float64(bytes) * 100 / float64(summary.TotalBytes)
-	}
-	mix := fmt.Sprintf("External: %.1f%%\nLAN/Priv: %.1f%%\nLoopback: %.1f%%\nUnknown:  %.1f%%",
-		pct(summary.ExternalBytes), pct(summary.PrivateBytes), pct(summary.LoopbackBytes), pct(summary.UnknownBytes))
+	scope := "External traffic only\nLocal traffic excluded\nSizes use decimal units\n1 GB = 1,000 MB"
 	cards := []string{}
-	for _, card := range []struct{ title, body string }{{"DAY VOLUME", volume}, {"LIVE SPEED", speed}, {"TRAFFIC MIX", mix}} {
+	for _, card := range []struct{ title, body string }{{"DAY VOLUME", volume}, {"LIVE SPEED", speed}, {"EXTERNAL TRAFFIC", scope}} {
 		cards = append(cards, cardStyle.Width(cardWidth).Render(headerLabel.Render(card.title)+"\n"+card.body))
 	}
 	if m.width < 72 {

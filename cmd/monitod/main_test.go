@@ -10,13 +10,19 @@ import (
 	"github.com/BraveRam/monito/pkg/storage"
 )
 
-type finalCollector struct{ stopped bool }
+type finalCollector struct {
+	stopped bool
+	deltas  []bpf.FlowDelta
+}
 
 func (f *finalCollector) StopAccounting() error                { f.stopped = true; return nil }
 func (f *finalCollector) ReadCounters() bpf.DiagnosticCounters { return bpf.DiagnosticCounters{} }
 func (f *finalCollector) DrainDeltas() ([]bpf.FlowDelta, error) {
 	if !f.stopped {
 		return nil, nil
+	}
+	if f.deltas != nil {
+		return f.deltas, nil
 	}
 	return []bpf.FlowDelta{{PID: 0, Category: bpf.CategoryExternal, RxBytes: 600, TxBytes: 200}}, nil
 }
@@ -81,5 +87,38 @@ func TestFinalSnapshotPersistsUndrainedTraffic(t *testing.T) {
 	summary, err := store.GetDaySummary(time.Now().Format("2006-01-02"))
 	if err != nil || summary.TotalBytes != 800 {
 		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+}
+
+func TestLiveRatesExcludeLocalTraffic(t *testing.T) {
+	store, err := storage.NewStorage(filepath.Join(t.TempDir(), "usage.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	collector := &finalCollector{stopped: true, deltas: []bpf.FlowDelta{
+		{Category: bpf.CategoryExternal, RxBytes: 600, TxBytes: 200},
+		{Category: bpf.CategoryLoopback, RxBytes: 9000, TxBytes: 9000},
+		{Category: bpf.CategoryPrivate, RxBytes: 7000, TxBytes: 7000},
+		{Category: bpf.CategoryUnknown, RxBytes: 5000, TxBytes: 5000},
+	}}
+	d := &collectorDaemon{store: store, resolver: identity.NewResolver(), bpfCollector: collector}
+	if err := d.poll(time.Now(), 2*time.Second); err != nil {
+		t.Fatal(err)
+	}
+	live := d.GetLiveStatus()
+	if live.TotalRateIn != 300 || live.TotalRateOut != 100 || live.TotalRate != 400 || len(live.AppRates) != 1 || live.AppRates[0].TotalRate != 400 {
+		t.Fatalf("local rates leaked: %+v", live)
+	}
+	if len(d.pendingRecords) != 4 {
+		t.Fatal("discarded raw history")
+	}
+	collector.deltas = collector.deltas[1:]
+	if err := d.poll(time.Now(), time.Second); err != nil {
+		t.Fatal(err)
+	}
+	live = d.GetLiveStatus()
+	if live.TotalRate != 0 || len(live.AppRates) != 0 {
+		t.Fatalf("local-only traffic leaked: %+v", live)
 	}
 }

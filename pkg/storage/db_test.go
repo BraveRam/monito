@@ -322,3 +322,55 @@ func TestAttributionIsIndependentOfTrafficCategory(t *testing.T) {
 		t.Fatalf("coverage=%+v err=%v", summary, err)
 	}
 }
+
+// Filtering happens at read time so upgrades also correct old displayed totals.
+func TestExternalViewsExcludeLocalHistory(t *testing.T) {
+	store, err := NewStorage(filepath.Join(t.TempDir(), "scope.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	mixed := &identity.AppIdentity{AppKey: "exec:mixed", DisplayName: "mixed", Category: "cli_tool"}
+	local := &identity.AppIdentity{AppKey: "exec:adb", DisplayName: "adb", Category: "cli_tool"}
+	unknown := &identity.AppIdentity{AppKey: "unknown:unattributed", DisplayName: "Unattributed Traffic", Category: "unknown"}
+	now := time.Now()
+	records := []IngestionRecord{
+		{Identity: mixed, Category: 2, BytesIn: 100, BytesOut: 20, PacketsIn: 3, PacketsOut: 2},
+		{Identity: mixed, Category: 0, BytesIn: 9000, BytesOut: 9000},
+		{Identity: mixed, Category: 1, BytesIn: 7000},
+		{Identity: mixed, Category: 3, BytesOut: 5000},
+		{Identity: local, Category: 0, BytesIn: 100000, BytesOut: 100000},
+		{Identity: unknown, Category: 2, BytesOut: 5},
+		{Identity: unknown, Category: 0, BytesOut: 9999},
+	}
+	if err := store.RecordUsage(records, time.Local); err != nil {
+		t.Fatal(err)
+	}
+	day := now.Format("2006-01-02")
+	summary, err := store.GetExternalDaySummary(day)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.TotalBytes != 125 || summary.TotalBytesIn != 100 || summary.TotalBytesOut != 25 || summary.ExternalBytes != 125 || summary.RecordedAppCount != 1 || summary.UnattributedBytes != 5 || summary.PrivateBytes != 0 || summary.LoopbackBytes != 0 || summary.UnknownBytes != 0 {
+		t.Fatalf("external summary: %+v", summary)
+	}
+	apps, err := store.GetExternalAppsForDay(day, "total")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(apps) != 2 || apps[0].Identity.AppKey != mixed.AppKey || apps[0].TotalBytes != 120 || apps[0].Category != 2 || apps[0].PacketsIn != 3 || apps[0].PacketsOut != 2 {
+		t.Fatalf("external apps: %+v", apps)
+	}
+	history, err := store.GetExternalAppHistory(mixed.AppKey, 7)
+	if err != nil || len(history) != 1 || history[0].TotalBytes != 120 {
+		t.Fatalf("external history: %+v %v", history, err)
+	}
+	history, err = store.GetExternalAppHistory(local.AppKey, 7)
+	if err != nil || len(history) != 0 {
+		t.Fatalf("local history leaked: %+v %v", history, err)
+	}
+	raw, err := store.GetDaySummary(day)
+	if err != nil || raw.TotalBytes != 125+18000+7000+5000+200000+9999 {
+		t.Fatalf("raw history changed: %+v %v", raw, err)
+	}
+}

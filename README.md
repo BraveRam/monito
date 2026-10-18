@@ -1,6 +1,15 @@
 # Monito
 
-A Linux network monitor with a Rust eBPF collector and a Go dashboard. It shows download, upload, live speed, and daily usage per application. The background collector keeps recording when you close the dashboard.
+A Linux network monitor with a Rust eBPF collector and a Go dashboard. It shows external download, upload, live speed, and daily usage per application. Local traffic, including ADB transfers over loopback, is excluded. The background collector keeps recording when you close the dashboard.
+
+![Monito dashboard showing external usage and live rates](docs/screenshots/dashboard.png)
+
+<details>
+<summary>Application details and daily history</summary>
+
+![Application details with seven-day external usage history](docs/screenshots/app-history.png)
+
+</details>
 
 ## Install
 
@@ -81,16 +90,16 @@ Dashboard keys: `↑/↓` select, `Enter` details, `←/→` change day, `T` tod
 
 - **Recorded:** identified apps with usage on the selected day.
 - **Transferring:** identified apps moving traffic now.
-- **Traffic mix:** external, LAN/private, loopback, or unknown network traffic.
+- **External traffic:** totals, app rows, live rates, and history exclude loopback, private/LAN, and unclassified traffic. Apps with only local traffic are hidden.
 - **App attribution:** percentage of bytes with a known app owner. Unattributed bytes cannot be assigned retroactively.
 
 Sizes and rates use decimal units: 1 KB = 1,000 bytes and 1 GB = 1,000,000,000 bytes.
 
 Accounting covers sockets in the collector’s network namespace (normally the host). Rootless container traffic is counted once under its host network helper, such as `pasta`, rather than also counting the inner container socket. Traffic confined to other network namespaces, including rootful bridged containers, is outside this scope.
 
-Usage includes IP headers and retransmissions. Loopback traffic counts at both sending and receiving apps. VPNs, proxies, and network offloads can make totals differ from interface counters or ISP bills.
+External usage includes IP headers and retransmissions. Classification uses the remote IP address; a private-address proxy or VPN endpoint may carry internet traffic that is excluded from this view. VPNs, proxies, and network offloads can make totals differ from interface counters or ISP bills.
 
-The namespace boundary applies to new measurements; upgrades preserve earlier totals, including any historical duplicate counting.
+External-only filtering also applies to stored history without deleting the original records. The namespace boundary applies to new measurements; upgrades preserve earlier totals, including any historical duplicate counting.
 
 History starts when collection starts and is stored at `/var/lib/monito/monito.db`. All local users can read system-wide usage through the collector.
 

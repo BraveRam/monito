@@ -1,7 +1,7 @@
 %global debug_package %{nil}
 
 Name:           monito
-Version:        1.1.2
+Version:        1.1.3
 Release:        1%{?dist}
 Summary:        Per-application Linux network traffic monitor
 License:        MIT OR GPL-2.0-only
@@ -55,6 +55,10 @@ sed -i 's#/usr/local/bin/monitod#%{_bindir}/monitod#' \
 %{_unitdir}/monito.service
 
 %changelog
+* Sun Oct 18 2026 Monito contributors - 1.1.3-1
+- Show external traffic only across totals, app history, and live rates.
+- Exclude local-only applications while preserving raw usage records.
+
 * Sat Oct 17 2026 Monito contributors - 1.1.2-1
 - Avoid counting rootless container traffic twice across network namespaces
 

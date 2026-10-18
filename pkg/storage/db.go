@@ -362,6 +362,15 @@ func (s *Storage) RecordInterfaceStats(ifname string, rxBytes, txBytes uint64) e
 
 // GetDaySummary returns aggregated day totals
 func (s *Storage) GetDaySummary(dayDate string) (*DaySummary, error) {
+	return s.getDaySummary(dayDate, false)
+}
+
+// GetExternalDaySummary excludes local and unclassified traffic, including historical records.
+func (s *Storage) GetExternalDaySummary(dayDate string) (*DaySummary, error) {
+	return s.getDaySummary(dayDate, true)
+}
+
+func (s *Storage) getDaySummary(dayDate string, externalOnly bool) (*DaySummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -378,8 +387,8 @@ func (s *Storage) GetDaySummary(dayDate string) (*DaySummary, error) {
 		FROM traffic_daily d
         LEFT JOIN app_aliases x ON x.alias_id=d.app_id
         JOIN app_identities a ON a.id=COALESCE(x.canonical_id,d.app_id)
-		WHERE day_date = ?
-	`, dayDate)
+		WHERE day_date = ? AND (? = 0 OR d.category = 2)
+	`, dayDate, externalOnly)
 
 	summary := &DaySummary{DayDate: dayDate}
 	err := row.Scan(
@@ -402,6 +411,15 @@ func (s *Storage) GetDaySummary(dayDate string) (*DaySummary, error) {
 
 // GetAppsForDay returns ranked applications for a given day
 func (s *Storage) GetAppsForDay(dayDate string, sortBy string) ([]TrafficRecord, error) {
+	return s.getAppsForDay(dayDate, sortBy, false)
+}
+
+// GetExternalAppsForDay excludes local and unclassified traffic, including historical records.
+func (s *Storage) GetExternalAppsForDay(dayDate string, sortBy string) ([]TrafficRecord, error) {
+	return s.getAppsForDay(dayDate, sortBy, true)
+}
+
+func (s *Storage) getAppsForDay(dayDate string, sortBy string, externalOnly bool) ([]TrafficRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -437,12 +455,12 @@ func (s *Storage) GetAppsForDay(dayDate string, sortBy string) ([]TrafficRecord,
 		FROM traffic_daily d
 		LEFT JOIN app_aliases x ON x.alias_id=d.app_id
         JOIN app_identities a ON a.id=COALESCE(x.canonical_id,d.app_id)
-		WHERE d.day_date = ?
+		WHERE d.day_date = ? AND (? = 0 OR d.category = 2)
 		GROUP BY a.id
 		ORDER BY %s
 	`, orderClause)
 
-	rows, err := s.db.Query(query, dayDate)
+	rows, err := s.db.Query(query, dayDate, externalOnly)
 	if err != nil {
 		return nil, err
 	}
@@ -498,6 +516,15 @@ func (s *Storage) GetAppsForDay(dayDate string, sortBy string) ([]TrafficRecord,
 
 // GetAppHistory returns daily usage for an application over the past N days
 func (s *Storage) GetAppHistory(appKey string, days int) ([]AppHistoryPoint, error) {
+	return s.getAppHistory(appKey, days, false)
+}
+
+// GetExternalAppHistory excludes local and unclassified traffic, including historical records.
+func (s *Storage) GetExternalAppHistory(appKey string, days int) ([]AppHistoryPoint, error) {
+	return s.getAppHistory(appKey, days, true)
+}
+
+func (s *Storage) getAppHistory(appKey string, days int, externalOnly bool) ([]AppHistoryPoint, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -512,7 +539,7 @@ func (s *Storage) GetAppHistory(appKey string, days int) ([]AppHistoryPoint, err
 		WHERE a.id=COALESCE(
             (SELECT canonical_id FROM app_aliases WHERE alias_id=(SELECT id FROM app_identities WHERE app_key=?)),
             (SELECT id FROM app_identities WHERE app_key=?))
-            AND d.day_date >= ? AND d.day_date <= ?
+            AND d.day_date >= ? AND d.day_date <= ? AND (? = 0 OR d.category = 2)
 		GROUP BY d.day_date
 		ORDER BY d.day_date DESC
 		LIMIT ?
@@ -522,7 +549,7 @@ func (s *Storage) GetAppHistory(appKey string, days int) ([]AppHistoryPoint, err
 	}
 	today := time.Now().In(time.Local)
 	cutoff := today.AddDate(0, 0, 1-days).Format("2006-01-02")
-	rows, err := s.db.Query(query, appKey, appKey, cutoff, today.Format("2006-01-02"), days)
+	rows, err := s.db.Query(query, appKey, appKey, cutoff, today.Format("2006-01-02"), externalOnly, days)
 	if err != nil {
 		return nil, err
 	}

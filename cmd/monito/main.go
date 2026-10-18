@@ -19,7 +19,7 @@ import (
 	"github.com/BraveRam/monito/pkg/util"
 )
 
-var version = "1.1.2"
+var version = "1.1.3"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -161,16 +161,9 @@ func runToday(socketPath string, asJSON bool) {
 	}
 
 	fmt.Printf("=== Monito Network Usage Summary for Today (%s) ===\n", today)
-	fmt.Printf("Total Traffic:      %s\n", util.FormatBytes(summary.TotalBytes))
+	fmt.Printf("External Traffic:   %s\n", util.FormatBytes(summary.TotalBytes))
 	fmt.Printf("  • Download (RX):  %s\n", util.FormatBytes(summary.TotalBytesIn))
 	fmt.Printf("  • Upload (TX):    %s\n", util.FormatBytes(summary.TotalBytesOut))
-	fmt.Println("\nTraffic by Category:")
-	fmt.Printf("  • External:       %s\n", util.FormatBytes(summary.ExternalBytes))
-	fmt.Printf("  • Private / LAN:  %s\n", util.FormatBytes(summary.PrivateBytes))
-	fmt.Printf("  • Loopback:       %s\n", util.FormatBytes(summary.LoopbackBytes))
-	if summary.UnknownBytes > 0 {
-		fmt.Printf("  • Unattributed:   %s\n", util.FormatBytes(summary.UnknownBytes))
-	}
 	fmt.Printf("\nRecorded Applications: %d\n", summary.RecordedAppCount)
 	if summary.TotalBytes > 0 {
 		fmt.Printf("App Attribution: %.1f%% (%s unattributed)\n", float64(summary.TotalBytes-summary.UnattributedBytes)*100/float64(summary.TotalBytes), util.FormatBytes(summary.UnattributedBytes))

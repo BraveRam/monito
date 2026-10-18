@@ -129,7 +129,7 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	summary, err := s.store.GetDaySummary(date)
+	summary, err := s.store.GetExternalDaySummary(date)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"failed to get summary: %s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -155,7 +155,7 @@ func (s *Server) handleApps(w http.ResponseWriter, r *http.Request) {
 	sort := r.URL.Query().Get("sort")
 	filter := strings.ToLower(r.URL.Query().Get("filter"))
 
-	records, err := s.store.GetAppsForDay(date, sort)
+	records, err := s.store.GetExternalAppsForDay(date, sort)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"failed to get apps: %s"}`, err.Error()), http.StatusInternalServerError)
 		return
@@ -252,7 +252,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	pts, err := s.store.GetAppHistory(appKey, days)
+	pts, err := s.store.GetExternalAppHistory(appKey, days)
 	if err != nil {
 		http.Error(w, fmt.Sprintf(`{"error":"failed to get history: %s"}`, err.Error()), http.StatusInternalServerError)
 		return

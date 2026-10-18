@@ -1,3 +1,11 @@
+monito (1.1.3-1) noble; urgency=medium
+
+  * Show external traffic only in totals, app rows, history, and live rates.
+  * Exclude loopback, private/LAN, and unclassified traffic from reports.
+  * Preserve raw records and filter previously recorded local traffic.
+
+ -- Monito contributors <BraveRam@users.noreply.github.com>  Sun, 18 Oct 2026 09:00:00 +0000
+
 monito (1.1.2-1) noble; urgency=medium
 
   * Scope packet accounting to the collector network namespace.

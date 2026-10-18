@@ -235,7 +235,7 @@ func TestDashboardLabelsCoverageAndWidths(t *testing.T) {
 			}
 		}
 		view := m.View()
-		for _, label := range []string{"Recorded: 4 apps", "Transferring: 1 apps", "Loopback: 20.0%", "Unknown:  10.0%", "App attribution: 40.0%", "Existing sockets recovered: 9"} {
+		for _, label := range []string{"Recorded: 4 apps", "Transferring: 1 apps", "External traffic only", "Local traffic excluded", "App attribution: 40.0%", "Existing sockets recovered: 9"} {
 			if !strings.Contains(view, label) {
 				t.Errorf("width %d missing %q", width, label)
 			}

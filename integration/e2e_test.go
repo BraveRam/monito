@@ -146,7 +146,13 @@ func TestMockEndToEnd(t *testing.T) {
 		t.Fatal(err)
 	}
 	ident := &identity.AppIdentity{AppKey: "test:curl", DisplayName: "curl", Category: "cli_tool"}
-	err = store.RecordUsage([]storage.IngestionRecord{{Identity: ident, Category: 2, BytesIn: 12345, BytesOut: 543}}, time.Local)
+	err = store.RecordUsage([]storage.IngestionRecord{
+		{Identity: ident, Category: 2, BytesIn: 12345, BytesOut: 543},
+		{Identity: ident, Category: 0, BytesIn: 500000, BytesOut: 500000},
+		{Identity: ident, Category: 1, BytesIn: 500000},
+		{Identity: ident, Category: 3, BytesIn: 500000},
+		{Identity: &identity.AppIdentity{AppKey: "test:adb", DisplayName: "adb", Category: "cli_tool"}, Category: 0, BytesIn: 1000000, BytesOut: 1000000},
+	}, time.Local)
 	store.Close()
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +188,13 @@ func TestMockEndToEnd(t *testing.T) {
 	if len(apps) != 1 || apps[0].Category != 2 || apps[0].CategoryStr != "external" {
 		t.Fatalf("apps=%+v", apps)
 	}
-	cli(t, bin, socket, "history", "--app=test:curl", "--days=7")
+	var history []storage.AppHistoryPoint
+	if err := json.Unmarshal(cli(t, bin, socket, "history", "--app=test:curl", "--days=7"), &history); err != nil || len(history) != 1 || history[0].TotalBytes != 12888 {
+		t.Fatalf("history=%+v err=%v", history, err)
+	}
+	if err := json.Unmarshal(cli(t, bin, socket, "apps"), &apps); err != nil || len(apps) != 1 || apps[0].TotalBytes != 12888 {
+		t.Fatalf("local app leaked: %+v %v", apps, err)
+	}
 	cli(t, bin, socket, "status")
 	cli(t, bin, socket, "doctor")
 	info, err := os.Stat(socket)
@@ -370,6 +382,10 @@ func kernelEndToEnd(t *testing.T, preexisting bool) {
 			t.Fatal("warmup failed")
 		}
 	}
+	initialLive, err := client.GetLive()
+	if err != nil {
+		t.Fatal(err)
+	}
 	for phase := 0; phase < 2; phase++ {
 		if _, err := fmt.Fprintln(input, "transfer"); err != nil {
 			t.Fatal(err)
@@ -383,14 +399,19 @@ func kernelEndToEnd(t *testing.T, preexisting bool) {
 			seen := false
 			for time.Now().Before(deadline) {
 				live, err := client.GetLive()
-				if err == nil && live.TotalRate > 0 {
+				if err == nil && live.Timestamp.After(initialLive.Timestamp) {
+					for _, rate := range live.AppRates {
+						if strings.HasPrefix(rate.AppKey, "exec:"+dir+"/e2e-") || strings.HasPrefix(rate.AppKey, "exec:e2e-") {
+							t.Fatalf("loopback workload leaked into live rates: %+v", rate)
+						}
+					}
 					seen = true
 					break
 				}
 				time.Sleep(10 * time.Millisecond)
 			}
 			if !seen {
-				t.Fatal("live endpoint never reported generated traffic")
+				t.Fatal("collector never polled generated traffic")
 			}
 		}
 	}
@@ -437,8 +458,8 @@ func kernelEndToEnd(t *testing.T, preexisting bool) {
 	// Reopen through the actual daemon/API to verify persistence after restart.
 	d = startDaemon(t, bin, db, socket, true)
 	out := cli(t, bin, socket, "apps")
-	if !strings.Contains(string(out), "e2e-server") || !strings.Contains(string(out), "e2e-client") {
-		t.Fatalf("restart lost apps: %s", out)
+	if strings.Contains(string(out), "e2e-server") || strings.Contains(string(out), "e2e-client") {
+		t.Fatalf("loopback apps leaked after restart: %s", out)
 	}
 	d.stop(t)
 }

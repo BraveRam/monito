@@ -26,7 +26,7 @@ type flowCollector interface {
 	ReadCounters() bpf.DiagnosticCounters
 }
 
-var version = "1.1.2"
+var version = "1.1.3"
 
 type collectorDaemon struct {
 	mu             sync.RWMutex
@@ -324,6 +324,10 @@ func (d *collectorDaemon) poll(now time.Time, elapsed time.Duration) error {
 			BytesIn: delta.RxBytes, BytesOut: delta.TxBytes,
 			PacketsIn: delta.RxPackets, PacketsOut: delta.TxPackets,
 		})
+		// Preserve raw history, but publish only external transfer rates.
+		if delta.Category != bpf.CategoryExternal {
+			continue
+		}
 		key := ident.AppKey
 		if canonical := aliases[key]; canonical != "" {
 			key = canonical
